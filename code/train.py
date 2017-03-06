@@ -6,6 +6,7 @@ import os
 import json
 
 import tensorflow as tf
+import numpy as np
 
 from qa_model import Encoder, QASystem, Decoder
 from os.path import join as pjoin
@@ -100,7 +101,7 @@ def load_train_dataset(data_dir):
         for line in answers_file:
             answer = map(int, line.split(" "))
             answers.append(answer)
-
+    
     training_set = zip(questions, contexts, answers)
     return training_set
             
@@ -114,7 +115,10 @@ def main(_):
     vocab_path = FLAGS.vocab_path or pjoin(FLAGS.data_dir, "vocab.dat")
     vocab, rev_vocab = initialize_vocab(vocab_path) # vocab = {words : indices}, rev_vocab = [words] (where each word is at index as dictated by vocab)
 
-    encoder = Encoder(size=FLAGS.state_size, vocab_dim=FLAGS.embedding_size)
+    # load in the embeddings
+    embeddings = np.load(embed_path)['glove']
+
+    encoder = Encoder(size=FLAGS.state_size, vocab_dim=FLAGS.embedding_size, embeddings=embeddings)
     decoder = Decoder(output_size=FLAGS.output_size)
 
     qa = QASystem(encoder, decoder)
