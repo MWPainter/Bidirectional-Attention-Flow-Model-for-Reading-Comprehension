@@ -14,6 +14,7 @@ from evaluate import exact_match_score, f1_score
 
 logging.basicConfig(level=logging.INFO)
 
+FLAGS = tf.app.flags.FLAGS
 
 def get_optimizer(opt):
     if opt == "adam":
@@ -26,25 +27,25 @@ def get_optimizer(opt):
 
 
 class Encoder(object):
-    def __init__(self, size, vocab_dim, embeddings):
-        self.size = size
+    def __init__(self, state_size, vocab_dim, embeddings):
+        self.state_size = size
         self.vocab_dim = vocab_dim
-        # TODO: some shit with embeddings
+        self.embeddingTensor = tf.Variable(tf.convert_to_tensor(embeddings, tf.float32))
 
-    def encode(self, inputs, masks, encoder_state_input):
+    def encode(self, question, context_paragraph):
         """
-        In a generalized encode function, you pass in your inputs,
-        masks, and an initial
-        hidden state input into this function.
+        Encoder function. Encodes the question and context paragraphs into some hidden representation.
+        This function assumes that the question has been padded already to be of length FLAGS.question_max_length 
+        and that the context paragraph has been padded to the length of FLAGS.context_paragraph_max_length
 
-        :param inputs: Symbolic representations of your input
-        :param masks: this is to make sure tf.nn.dynamic_rnn doesn't iterate
-                      through masked steps
-        :param encoder_state_input: (Optional) pass this as initial hidden state
-                                    to tf.nn.dynamic_rnn to build conditional representations
-        :return: an encoded representation of your input.
-                 It can be context-level representation, word-level representation,
-                 or both.
+        :param question: A list of words for the question. Each word is a tf.placeholder 
+                for a scalar int
+        :param context_paragraph: A list of words for the quection. Each word is a tf.placeholder 
+                for a scalar int
+        :return: An (tf op of) encoded representation of the input of the form (state, context_vectors)
+                'state' is a single row vector of size 'self.state_size'
+                'context_vectors' is a list of n+1 row vectors of size 'self.state_size' if n is the number of words 
+                        in the context sentence
         """
 
         return
