@@ -3,3 +3,4 @@ code/download/*
 login.txt
 data/*
 download/*
+*.pyc
