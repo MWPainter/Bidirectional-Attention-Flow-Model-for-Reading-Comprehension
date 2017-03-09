@@ -130,6 +130,7 @@ def generate_answers(sess, model, dataset, rev_vocab):
     :return:
     """
     answers = {}
+    answrs[uuid] = answer
 
     return answers
 

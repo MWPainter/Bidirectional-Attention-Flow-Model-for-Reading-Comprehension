@@ -26,12 +26,16 @@ def get_optimizer(opt):
     return optfn
 
 
+# the session is created in train.py but it is passed into all functions
+
+
 class Encoder(object):
     def __init__(self, state_size, vocab_dim, embeddings):
-        self.state_size = size
+        self.state_size = state_size
         self.vocab_dim = vocab_dim
         self.embeddingTensor = tf.Variable(tf.convert_to_tensor(embeddings, tf.float32))
-
+        # cell = rnn)cell.basicLSTMCell(self.size)
+        
     def encode(self, question, context_paragraph):
         """
         Encoder function. Encodes the question and context paragraphs into some hidden representation.
@@ -47,9 +51,28 @@ class Encoder(object):
                 'context_vectors' is a list of n+1 row vectors of size 'self.state_size' if n is the number of words 
                         in the context sentence
         """
+        with vs.variable_scope(scope, resue): # if you change the scope, you'll be using two different self.cell's
+            # build your dynamic_rnn in here
+            # src_len = tf.reduce_sum(mask, axis = 1)
+            o, _ = dynamic_rnn(self.cell, inputs, srclen = srclen, inputs_state=None) # the first returned value is a 3d object with all the hidden states
+            #(fw_o, bw_o), _ = bidirectional_dynamic_rnn(self.cell, self.cell, inputs) fw_o and bw_o are forward and backward things
+            o = tf.concat(fw_o[:,-1,:], bw_o[:,0,:])
+        return o # (N, T, d) N is the mini batch size, T is the length of the sentence or context, d is the dimension of each word
+    # encoder = Encoder()
+    # encoder.encode(question)
+    # encoder.encode(paragrapgh, resue=True) this will use the same cell since reuse=True
+    def  encode_w_attn(self, inputs, masks, prev_states, score="", reuse = false):
+        self.attn_cell = AttnGRUCell = ArrnCRUCell(self.size, prev_states)
+        with vs.variable_scope(scope, reuse):
+            0, _= dynamic_rnn(self.attn_Cell, inputs, srclem=srclen, initial_state=None)
 
+class AttnGRUCell(rnn_cell.GRUCell):
+    def __init__():
+        # call super class
         return
-
+    def __call__():
+        # this is called when it is created
+        return
 
 class Decoder(object):
     def __init__(self, output_size):
@@ -67,9 +90,21 @@ class Decoder(object):
                               decided by how you choose to implement the encoder
         :return:
         """
-
+        # h_q, h_p: 2-d TF variable
+        with vs.scope("answer_start"):
+            a_s = rnn_cell._linear([h_q, h_p], output_size= self.output_size)
+        with vs.scope("answer_end"):
+            a_e = rnn_cell._linear([h_q, h_p], output_size= self.output_size)
+        # with vs.scope("linear_default"):
+        #   tf.get_variable("W", shape = [])
+        #   tf.get_variable("b", shape = [])
+        #   h_q = W + b
+        #   tf.get_variable("W", shape = [])
+        #   tf.get_variable("b", shape = [])
+        #   h_p = W + b
+        # creates h_qW + b_q + h_pW + b_p
         return
-
+    
 class QASystem(object):
     def __init__(self, encoder, decoder, *args):
         """
@@ -81,8 +116,10 @@ class QASystem(object):
         """
 
         # ==== set up placeholder tokens ========
-
-
+        # done inside setup_system
+        # self.paragraph = tf.placeholder(shape = [None, self.GLAGS.output_size])
+        self.start_amswer = tf.placeholder(shape = [None, self.FLGAS.outuput_size])
+        self.end_answer = tf.placeholder(shape = [None, self.FLGAS.outuput_size])
         # ==== assemble pieces ====
         with tf.variable_scope("qa", initializer=tf.uniform_unit_scaling_initializer(1.0)):
             self.setup_embeddings()
@@ -90,8 +127,10 @@ class QASystem(object):
             self.setup_loss()
 
         # ==== set up training/updating procedure ====
-        pass
-
+        params = tf.trainable_vriables()
+        self.updates - get_optimizer(optimizer)(self.learning_rate).minimize(self.loss)
+        # define an optimization proedure
+        # sess.run(self.updates???)
 
     def setup_system(self):
         """
@@ -100,8 +139,48 @@ class QASystem(object):
         to assemble your reading comprehension system!
         :return:
         """
-        raise NotImplementedError("Connect all parts of your system here!")
+        self.question_placeholder = tf.placeholder(tf.int32, (None, FLAGS.question_max_length, FLAGS.embedding_size))
+        self.context_placeholder = tf.placeholder(tf.int32, (None, FLAGS.context_paragraph_max_length, FLAGS.embedding_size))
+        self.question_mask_placeholder = tf.placeholder(tf.bool, (None, FLAGS.question_max_length))
+        self.context_mask_placeholder = tf.placeholder(tf.int32, (None, FLAGS.context_paragraph_max_length))
+        self.answer_placeholder = tf.placeholder(tf.int32, (None, 2))
+        self.dropout_placeholder = tf.placeholder(tf.float32)
+        questionVector, contextVectors = self.encoder.encode(self.question_placeholder, self.contextParagraph)
+        pred = self.decoder.decode(questionVector, contextVectors)
+        
+        # q_o, q_h = encoder.encode(self.question_Var)
+        # p_o, p_h= encoder.encode(self.paragraph_Var, init_state = q_h, reuse = True)
+        # self.a_s, self.a_e = decoder.decode(q_h, p_h)
 
+        
+    def create_feed_dict(self, question_batch, context_batch, answers_batch = None, dropout = 1):
+        feed_dict = {}
+        self.question_mask_batch = []
+        self.context_mask_batch = []
+        if question_batch is not None:
+            for i in range(len(question_batch)):
+                q = [True] * len(question_batch[i])
+                for _ in range(FLAGS.question_max_length - len(question_batch[i])):
+                    question_batch[i].append(0)
+                    q.append(False)
+                self.question_mask_batch.append(q)
+            feed_dict[self.question_placeholder] = question_batch
+            
+        if context_batch is not None:
+            for i in range(len(context_batch)):
+                q = [True] * len(context_batch[i])
+                for _ in range(FLAGS.context_paragraph_max_length - len(context_batch[i])):
+                    context_batch[i].append(0)
+                    q.append(False)
+                self.context_mask_batch.append(q)
+            feed_dict[self.context_placeholder] = context_batch
+            
+        if answers_batch is not None:
+            feed_dict[self.answers_placeholder] = answers_batch
+
+        if dropout is not None:
+            feed_dict[self.dropout_placeholder] = dropout
+        return feed_dict
 
     def setup_loss(self):
         """
@@ -109,7 +188,9 @@ class QASystem(object):
         :return:
         """
         with vs.variable_scope("loss"):
-            pass
+            l1 = tf.nn.sparse_softmax_cross_entropy_with_logits(self.a_s, self.start_answer)
+            l2 = tf.nn.sparse_softmax_cross_entropy_with_logits(self.a_e, self.end.answer)
+            self.loss = l1 + l2
 
     def setup_embeddings(self):
         """
@@ -117,7 +198,10 @@ class QASystem(object):
         :return:
         """
         with vs.variable_scope("embeddings"):
-            pass
+            glove_matrix = np.load()['glove']
+            tf.constant(glove_matrix) # if you wanna train the embeddings too, put it in a vriable
+            tf.nn.embedding_lookup(params, ids)
+            # self.paragraph_var = tf.nn.embedding_lookup(params, self.paragraph_placeholder)
 
     def optimize(self, session, train_x, train_y):
         """
@@ -130,7 +214,9 @@ class QASystem(object):
         # fill in this feed_dictionary like:
         # input_feed['train_x'] = train_x
 
-        output_feed = []
+
+        #grad_norm, paramm_norm
+        output_feed = [self.updates, self.loss]
 
         outputs = session.run(output_feed, input_feed)
 
@@ -147,39 +233,29 @@ class QASystem(object):
         # fill in this feed_dictionary like:
         # input_feed['valid_x'] = valid_x
 
-        output_feed = []
+        output_feed = [self.loss]
 
-        outputs = session.run(output_feed, input_feed)
+        outputs = session.run(output_feed, input_feed) # sessions always return real things
 
         return outputs
 
-    def decode(self, session, test_x):
-        """
-        Returns the probability distribution over different positions in the paragraph
-        so that other methods like self.answer() will be able to work properly
-        :return:
-        """
+    def decode(self, session, test_paragraph, test_question):
         input_feed = {}
 
-        # fill in this feed_dictionary like:
-        # input_feed['test_x'] = test_x
+        input_feed[self.paragraph] = test_paragraph
+        input_feed[self.question] = test_question
 
-        output_feed = []
-
+        output_feed = [self.a_s, self.a_e]
         outputs = session.run(output_feed, input_feed)
-
         return outputs
 
-    def answer(self, session, test_x):
+    def answer:
+        yp_yp2 = self.decode(session, tset_x)
 
-        yp, yp2 = self.decode(session, test_x)
-
-        a_s = np.argmax(yp, axis=1)
-        a_e = np.argmax(yp2, axis=1)
-
-        return (a_s, a_e)
-
-    def validate(self, sess, valid_dataset):
+        a_s = np.argmax(yp, axis = 1)
+        a_3 = np.argmax(yp2, axis = 1)
+        return (a-s, a_3)
+    def validate(self, sess, valid_dataset): # only used for unseen examples, ie when you wanna check your model
         """
         Iterate through the validation dataset and determine what
         the validation cost is.
@@ -199,7 +275,7 @@ class QASystem(object):
 
         return valid_cost
 
-    def evaluate_answer(self, session, dataset, sample=100, log=False):
+    def evaluate_answer(self, session, paragraph, question, sample=100, log=False):
         """
         Evaluate the model's performance using the harmonic mean of F1 and Exact Match (EM)
         with the set of true answer labels
@@ -214,10 +290,16 @@ class QASystem(object):
         :param log: whether we print to std out stream
         :return:
         """
-
+        from evaluate import f1_score, exact_match_score
+        
         f1 = 0.
         em = 0.
 
+        for p, q in zip(paragraph, question):
+            a_s, a_e = self.answer(session, p, q)
+            answer = p[a_s, a_e + 1]
+            f1_score(prediction, ground_truth)
+            
         if log:
             logging.info("F1: {}, EM: {}, for {} samples".format(f1, em, sample))
 
@@ -258,3 +340,19 @@ class QASystem(object):
         num_params = sum(map(lambda t: np.prod(tf.shape(t.value()).eval()), params))
         toc = time.time()
         logging.info("Number of params: %d (retreival took %f secs)" % (num_params, toc - tic))
+        for e in range(self.FLAGS.epochs):
+            for p, q, a in data_set:
+                loss = self.optimize(session, q, p, a)
+                # save your model here
+                saver = tf.saver()
+
+                val_loss = self.validate(p_val, q_val, a_val)
+
+                self.evaluate_answer(session, q_val, p_val)
+                self.evaluate_ansewr(session, q, p, sample = 100) # doing this cuz we wanna make sure it at least works well for the stuff it's already seen
+
+            s
+
+
+
+        
