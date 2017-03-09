@@ -29,7 +29,7 @@ def get_optimizer(opt):
 class Encoder(object):
     def __init__(self, state_size, vocab_dim, embeddings):
         self.state_size = size
-        self.vocab_dim = vocab_dim
+        self.vocab_dim = vocab_dim # the dimension of the wor
         self.embeddingTensor = tf.Variable(tf.convert_to_tensor(embeddings, tf.float32))
 
     def encode(self, question, context_paragraph):
@@ -47,6 +47,34 @@ class Encoder(object):
                 'context_vectors' is a list of n+1 row vectors of size 'self.state_size' if n is the number of words 
                         in the context sentence
         """
+        question_length = FLAGS.question_max_length
+        context_paragraph_length = FLAGS.context_paragraph_length
+        dropout_rate = FLAGS.dropout
+
+        # TODO: get words from embeddings
+        distributed_questions = # questions input, dimensions [batch_size, question_lenth, embedding_dim] (n.b. embedding_dim = self.vocab_dim in the code)
+        
+        # define a rolled out LSTM network for "forward, question LSTM"
+        # With a linear layer ontop of the output (so that dropout can be used)
+        with tf.variable_scope("fq_lstm"):
+            # Reuse variables - so that we share variables
+            tf.get_variable_scope().reuse_variables()
+            
+            # Variables for the linear layer (added to the end of the LSTM output)
+            M_shape = (self.state_size, self.state_size)
+            M_init = tf.contrib.layers.xavier_initiliazer()
+            M = tf.get_variable("M", shape=(M_size, initializer=M_init))
+            bias_shape = (self.state_size,)
+            bias_init = tf.constant_initializer(0.0)
+            bias  = tf.get_variable("bias", shape=bias_shape, initializer=bias_init)
+
+            # Define the rolled out network
+            for time_step in range(question_length):
+                fq_lstm = tf.nn.rnn_cell.LSTMCell(1)
+                output, state = fq_lstm(distributed_questions[:,time_step,:], state, scope="fq_lstm") # set scope so all lstm's share weights
+                # TODO: fin eqns
+                # TODO: write the eqns out in a general method and use them repeatedly               
+                
 
         return
 
