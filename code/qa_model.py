@@ -30,30 +30,139 @@ def get_optimizer(opt):
 
 
 class Encoder(object):
-    def __init__(self, state_size, vocab_dim, embeddings):
-        self.state_size = state_size
-        self.vocab_dim = vocab_dim
-        self.embeddingTensor = tf.Variable(tf.convert_to_tensor(embeddings, tf.float32))
-        # cell = rnn)cell.basicLSTMCell(self.size)
+    def __init__(self, state_size, embedding_dim):
+        self.state_size = size
+        self.embedding_dim = vocab_dim # the dimension of the wor
+        cell = rnn.cell.basicLSTMCell(self.size)
         
-    def encode(self, question, context_paragraph):
+    def encode(self, question, question_mask, context_paragraph, context_mask):
         """
         Encoder function. Encodes the question and context paragraphs into some hidden representation.
         This function assumes that the question has been padded already to be of length FLAGS.question_max_length 
         and that the context paragraph has been padded to the length of FLAGS.context_paragraph_max_length
 
-        :param question: A list of words for the question. Each word is a tf.placeholder 
-                for a scalar int
-        :param context_paragraph: A list of words for the quection. Each word is a tf.placeholder 
-                for a scalar int
-        :return: An (tf op of) encoded representation of the input of the form (state, context_vectors)
-                'state' is a single row vector of size 'self.state_size'
-                'context_vectors' is a list of n+1 row vectors of size 'self.state_size' if n is the number of words 
-                        in the context sentence
+        :param question: A tf.placeholder for words in the question. 
+                Dims = [batch_size, question_length, embedding_dimension]
+        :param question_mask: A tf.placholder for a mask over the question. 
+                Dims = [batch_size, question_length, 1]
+                0 in mask indicates if the word is padding (<pad>), 1 otherwise
+        :param context_paragraph: A tf.placeholder for words in the context paragraph 
+                Dims = [batch_size, context_paragraph_length, embedding_dimension]
+        :param context_mask: A tf.placholder for a mask over the context paragraph. 
+                Dims = [batch_size, context_paragraph_length, 1]
+                0 in mask indicates if the word is padding (<pad>), 1 otherwise
+        :param var_scope: The tf variable scope to use
+        :param reuse: boolean whether to reuse variables in this scope
+        :return: An (tf op of) encoded representation of the input of the form (attention_vector, context_vectors)
+                'attention_vector' is the attention vector for the sequence
+                dims = [batch_size, state_size]
+                'context_vectors' is the states of the (rolled out) rnn for the context paragraph
+                dims = [batch_size, context_paragraph_length, state_size]
         """
-        with vs.variable_scope(scope, resue): # if you change the scope, you'll be using two different self.cell's
+
+        # Build a BiLSTM layer for the question (we only want the concatinated end vectors here)
+        question_vector, _ = build_rnn(self.cell, question, question_mask, scope="question_BiLSTM", reuse=True)
+
+        # Concatanate the question vector to every word in the context paragraph, by tiling the question vector and concatinating
+        question_vector_tiled = tf.expand_dims(question_vector, 1)
+        question_vector_tiled = tf.tile(question_vector_tiled, tf.pack([1, tf.shape(context_paragraph)[1], 1]))
+        context_input = tf.concat(context_paragraph, question_vector_tiled)
+
+        # Build BiLSTM layer for the context (want all output states here)
+        _, context_states = build_rnn(context_input, context_mask, scope="context_BiLSTM", reuse=True)
+
+        # Create attention vector
+        attention_vector = create_attention_vector(context_states, question_vector, scope="AttentionVector", reuse=True)
+
+        # Retuuuurn
+        return (attention_vector, context_states)
+
+
+
+    def build_rnn(inpt, mask, scope="default scope", reuse=False):
+        """
+        Helper function to build a rolled out rnn. We need the mask to tell tf how far to roll out the network
+        
+        :param inpt: input to the rnn, should be a tf.placeholder/tf.variable
+            Dims: [batch_size, input_sequence_length, embedding_size], input_sequence_length is the question/context_paragraph length
+        :param mask: a tf.variable for the mask of the input, if there is a 0 in this, then the corresponding word is a <pad>
+            Dims: [batch_size, input_sequence_length]
+        :param scope: the variable scope to use
+        :param reuse: boolean if we should reuse parameters in each cell in the rolled out network (i.e. is it theoretically the "same cell" or different?)
+        :return: (concat(fw_final_state, bw_final_state), concat(fw_all_states, bw_all_states)), 
+                final_state is the final states of (RELEVANT part) of the states
+                dim = [batch_size, cell_size] (cell_size = hidden state size of the lstm)
+                so dim of concatinated state is [batch_size, 2*cell_size]
+                all_states are the tf.variable's for all of the hidden states
+                dim = [batch_size, input_sequence_length, cell_size]
+                dim of the concatinated states is [batch_size, input_sequence_length, 2*cell_size]
+        """
+
+        # build the dynamic_rnn, compute lengths of the sentences (using mask) so tf knows how far it needs to roll out rnn
+        # fw_outputs, bw_outputs is of dim [batch_size, input_sequence_length, embedding_size], n.b. "input_lengths" below is smaller than "input_sequence_length"
+        # we think second output is the ("true") final state, but TF docs are ambiguous AF, so I don't really know. There may be problems here...
+        with vs.variable_scope(scope, reuse):
+            input_length = tf.reduce_sum(mask, axis=1) # dim = [batch_size]
+            (fw_outputs, bw_outputs), (fw_final_state, bw_final_state) = tf.nn.bidirectional_dynamic_rnn(self.cell, self.cell, sequence_length=input_length) 
+            return (tf.concat([fw_final_state, bw_final_state], 1), tf.concat([fw_outputs, bw_outputs], 2))
+
+
+
+    def create_attention_vector(rnn_states, cur_state, scope="default scope", reuse=False):
+        """
+        Helper function to create an attention vector. rnn_states and cur_state are vectors with dimension state_size
+        rnn_states encorporates inputes of length 'seq_len'
+
+        :param rnn_state: the states which an rnn went through, and we want to learn which are relevant
+            dim = [batch_size, seq_len, state_size]
+        :param cur_state: the current state which we want to attend to
+            dim = [batch_size, state_size]       
+        :param scope: the variable scope to use
+        :param reuse: boolean if we should reuse parameters in each cell in the rolled out network (i.e. is it theoretically the "same cell" or different?)
+        :return: an attention vector, which is a weighted combination of the rnn_states, encorporating relevant information from rnn_states
+        """
+
+        # Compute scores for each rnn state
+        state_size = self.size * 2 # vectors we're working with are concatinations of two vectors
+        batch_size = tf.shape(rnn_states)[0]
+        seq_len = tf.shape(rnn_states)[1]
+        with vs.variable_scope(scope, reuse):
+            # Setup variables to be able to make the matrix product
+            inner_product_matrix = tf.get_variable("inner_produce_matrix", shape=(state_size, state_size), initializer=tf.contrib.layers.xavier_initialization()) # dim = [statesize, statesize]
+            inner_product_matrix_tiled = tf.expand_dims(tf.expand_dims(inner_product_matrix, 0), 0) # dim = [1, 1, statesize, statesize]
+            inner_product_matrix_tiled = tf.tile(inner_product_matrix_tiled, tf.pack([batch_size, seq_len, 1, 1])) # dim = [batch_size, seq_len, statesize, statesize]
+            cur_state_tiled = tf.expand_dims(tf.expand_dims(cur_state, 0), 0) # dim = [1, 1, statesize]
+            cur_state_tiled = tf.tile(cur_state_tiled, tf.pack([batch_size, seq_len, 1])) # dim = [batch_size, seq_len, statesize]
+            cur_state_tiled = tf.expand_dims(cur_state_tiled, 3) # dim = [batch_size, seq_len, state_size, 1]
+            rnn_state_expanded = tf.expand_dims(rnn_states, 2) # dim = [batch_size, seq_len, 1, state_size]
+
+            # Matrix product. Each input is a rank 4 tensor. For each index in batch_size, seq_len, we comupute an quadratic form. [1, state_size] * [state_size, state_size] * [state_size, 1]
+            attention_scores = tf.matmul(tf.matmul(rnn_state_expanded, inner_product_matrix_tiled), cur_state_tiled) # dim = [batch_size, seq_len, 1, 1]
+            attention_scores = tf.reduce_max(tf.reduce_max(attention_scores, axis=3), axis=2) # dim = [batch_size, seq_len], just used to reduce rank of tensor
+
+            # Attention vector is attention scores run through softmax
+            attention = tf.nn.softmax(attention_scores) # dim = [batch_size, seq_len]
+
+            # Take a weighted sum over the vectors in the rnn, the multiply broadcasts appropriately (1 over state_size)
+            attention_vector = tf.reduce_sum(tf.multiply(rnn_states, attention_vector), axis = 1) # before reduce sum dim = [batch_size, seq_len, state_size], after dim = [batch_size, state_size]
+            return attention_vector
+
+
+            
+
+
+""" SHHHHHHIIIIIIEEEEET from coding session
+        question_length = FLAGS.question_max_length
+        context_paragraph_length = FLAGS.context_paragraph_length
+        dropout_rate = FLAGS.dropout
+
+        # TODO: get words from embeddings
+        distributed_questions = # questions input, dimensions [batch_size, question_lenth, embedding_dim] (n.b. embedding_dim = self.vocab_dim in the code)
+      
+        with vs.variable_scope(scope, reuse): # if you change the scope, you'll be using two different self.cell's
             # build your dynamic_rnn in here
-            # src_len = tf.reduce_sum(mask, axis = 1)
+            mask = tf.sign(context_paragraph)
+            context_len = tf.reduce_sum(mask, axis = 1)
             o, _ = dynamic_rnn(self.cell, inputs, srclen = srclen, inputs_state=None) # the first returned value is a 3d object with all the hidden states
             #(fw_o, bw_o), _ = bidirectional_dynamic_rnn(self.cell, self.cell, inputs) fw_o and bw_o are forward and backward things
             o = tf.concat(fw_o[:,-1,:], bw_o[:,0,:])
@@ -61,7 +170,7 @@ class Encoder(object):
     # encoder = Encoder()
     # encoder.encode(question)
     # encoder.encode(paragrapgh, resue=True) this will use the same cell since reuse=True
-    def  encode_w_attn(self, inputs, masks, prev_states, score="", reuse = false):
+    def  encode_w_attn(self, inputs, masks, prev_states, scope="", reuse = false):
         self.attn_cell = AttnGRUCell = ArrnCRUCell(self.size, prev_states)
         with vs.variable_scope(scope, reuse):
             0, _= dynamic_rnn(self.attn_Cell, inputs, srclem=srclen, initial_state=None)
@@ -73,6 +182,7 @@ class AttnGRUCell(rnn_cell.GRUCell):
     def __call__():
         # this is called when it is called
         return
+"""
 
 class Decoder(object):
     def __init__(self, output_size):
