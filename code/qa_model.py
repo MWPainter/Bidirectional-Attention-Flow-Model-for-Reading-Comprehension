@@ -14,7 +14,6 @@ from evaluate import exact_match_score, f1_score_ours
 
 logging.basicConfig(level=logging.INFO)
 
-FLAGS = tf.app.flags.FLAGS
 
 def get_optimizer(opt):
     if opt == "adam":
@@ -31,15 +30,15 @@ def get_optimizer(opt):
 
 class Encoder(object):
     def __init__(self, state_size, embedding_dim):
-        self.state_size = size
-        self.embedding_dim = vocab_dim # the dimension of the wor
-        cell = rnn.cell.basicLSTMCell(self.size)
+        self.state_size = state_size
+        self.embedding_dim = embedding_dim # the dimension of the word embeddings
+        self.cell = tf.nn.rnn_cell.BasicLSTMCell(self.state_size)
         
     def encode(self, question, question_mask, context_paragraph, context_mask):
         """
         Encoder function. Encodes the question and context paragraphs into some hidden representation.
-        This function assumes that the question has been padded already to be of length FLAGS.question_max_length 
-        and that the context paragraph has been padded to the length of FLAGS.context_paragraph_max_length
+        This function assumes that the question has been padded already to be of length self.FLAGS.question_max_length 
+        and that the context paragraph has been padded to the length of self.FLAGS.context_paragraph_max_length
 
         :param question: A tf.placeholder for words in the question. 
                 Dims = [batch_size, question_length, embedding_dimension]
@@ -61,25 +60,25 @@ class Encoder(object):
         """
 
         # Build a BiLSTM layer for the question (we only want the concatinated end vectors here)
-        question_vector, _ = build_rnn(self.cell, question, question_mask, scope="question_BiLSTM", reuse=True)
+        question_vector, _ = self.build_rnn(question, question_mask, scope="question_BiLSTM", reuse=True)
 
         # Concatanate the question vector to every word in the context paragraph, by tiling the question vector and concatinating
         question_vector_tiled = tf.expand_dims(question_vector, 1)
         question_vector_tiled = tf.tile(question_vector_tiled, tf.pack([1, tf.shape(context_paragraph)[1], 1]))
-        context_input = tf.concat(context_paragraph, question_vector_tiled)
+        context_input = tf.concat(2, [context_paragraph, question_vector_tiled])
 
         # Build BiLSTM layer for the context (want all output states here)
-        _, context_states = build_rnn(context_input, context_mask, scope="context_BiLSTM", reuse=True)
+        _, context_states = self.build_rnn(context_input, context_mask, scope="context_BiLSTM", reuse=True)
 
-        # Create attention vector
-        attention_vector = create_attention_vector(context_states, question_vector, scope="AttentionVector", reuse=True)
+        # Create a 'context' vector from attention
+        attention_context_vector = self.create_attention_context_vector(context_states, question_vector, scope="AttentionVector", reuse=True)
 
         # Retuuuurn
-        return (attention_vector, context_states)
+        return (attention_context_vector, context_states)
 
 
 
-    def build_rnn(inpt, mask, scope="default scope", reuse=False):
+    def build_rnn(self, inpt, mask, scope="default scope", reuse=False):
         """
         Helper function to build a rolled out rnn. We need the mask to tell tf how far to roll out the network
         
@@ -103,12 +102,16 @@ class Encoder(object):
         # we think second output is the ("true") final state, but TF docs are ambiguous AF, so I don't really know. There may be problems here...
         with vs.variable_scope(scope, reuse):
             input_length = tf.reduce_sum(mask, axis=1) # dim = [batch_size]
-            (fw_outputs, bw_outputs), (fw_final_state, bw_final_state) = tf.nn.bidirectional_dynamic_rnn(self.cell, self.cell, sequence_length=input_length) 
-            return (tf.concat([fw_final_state, bw_final_state], 1), tf.concat([fw_outputs, bw_outputs], 2))
+            (fw_outputs, bw_outputs), _ = tf.nn.bidirectional_dynamic_rnn(self.cell, self.cell, inpt, sequence_length=input_length, dtype=tf.float32) 
+            fw_final_state = fw_outputs[:,-1,:]
+            bw_final_state = bw_outputs[:,0,:]
+            representation = tf.concat(1, [fw_final_state, bw_final_state])
+            state_history = tf.concat(2, [fw_outputs, bw_outputs])
+            return (representation, state_history)
 
 
 
-    def create_attention_vector(rnn_states, cur_state, scope="default scope", reuse=False):
+    def create_attention_context_vector(self, rnn_states, cur_state, scope="default scope", reuse=False):
         """
         Helper function to create an attention vector. rnn_states and cur_state are vectors with dimension state_size
         rnn_states encorporates inputes of length 'seq_len'
@@ -123,15 +126,15 @@ class Encoder(object):
         """
 
         # Compute scores for each rnn state
-        state_size = self.size * 2 # vectors we're working with are concatinations of two vectors
+        state_size = self.state_size * 2 # vectors we're working with are concatinations of two vectors
         batch_size = tf.shape(rnn_states)[0]
         seq_len = tf.shape(rnn_states)[1]
         with vs.variable_scope(scope, reuse):
             # Setup variables to be able to make the matrix product
-            inner_product_matrix = tf.get_variable("inner_produce_matrix", shape=(state_size, state_size), initializer=tf.contrib.layers.xavier_initialization()) # dim = [statesize, statesize]
+            inner_product_matrix = tf.get_variable("inner_produce_matrix", shape=(state_size, state_size), initializer=tf.contrib.layers.xavier_initializer()) # dim = [statesize, statesize]
             inner_product_matrix_tiled = tf.expand_dims(tf.expand_dims(inner_product_matrix, 0), 0) # dim = [1, 1, statesize, statesize]
             inner_product_matrix_tiled = tf.tile(inner_product_matrix_tiled, tf.pack([batch_size, seq_len, 1, 1])) # dim = [batch_size, seq_len, statesize, statesize]
-            cur_state_tiled = tf.expand_dims(tf.expand_dims(cur_state, 0), 0) # dim = [1, 1, statesize]
+            cur_state_tiled = tf.expand_dims(cur_state, 1) # dim = [batch_size, 1, statesize]
             cur_state_tiled = tf.tile(cur_state_tiled, tf.pack([batch_size, seq_len, 1])) # dim = [batch_size, seq_len, statesize]
             cur_state_tiled = tf.expand_dims(cur_state_tiled, 3) # dim = [batch_size, seq_len, state_size, 1]
             rnn_state_expanded = tf.expand_dims(rnn_states, 2) # dim = [batch_size, seq_len, 1, state_size]
@@ -142,9 +145,10 @@ class Encoder(object):
 
             # Attention vector is attention scores run through softmax
             attention = tf.nn.softmax(attention_scores) # dim = [batch_size, seq_len]
+            attention = tf.expand_dims(attention, 2) # dim = [batch_size, seq_len, 1]
 
             # Take a weighted sum over the vectors in the rnn, the multiply broadcasts appropriately (1 over state_size)
-            attention_context_vector = tf.reduce_sum(tf.multiply(rnn_states, attention_vector), axis = 1) # before reduce sum dim = [batch_size, seq_len, state_size], after dim = [batch_size, state_size]
+            attention_context_vector = tf.reduce_sum(tf.multiply(rnn_states, attention), axis = 1) # before reduce sum dim = [batch_size, seq_len, state_size], after dim = [batch_size, state_size]
             return attention_context_vector
 
 
@@ -152,8 +156,9 @@ class Encoder(object):
 class Decoder(object):
     def __init__(self, output_size):
         self.output_size = output_size
+        self.FLAGS = tf.app.flags.FLAGS # Get a link to tf.app.flags  
 
-    def decode(self, knowledge_rep):
+    def decode(self, attention_ctx_vector, context_par_vectors):
         """
         takes in a knowledge representation
         and output a probability estimation over
@@ -169,14 +174,18 @@ class Decoder(object):
 
         # Bardia's work:
         
-        cell = tf.nn.rnn_cell.LSTMCell(FLAGS.state_size)
-        x = tf.concatenate(h_p, tf.tile(av, tf.pack([tf.shape(h_p)[0], 1])))
-        with vs.scope("answer_start"):
-            val, _ = tf.nn.dynamic_rnn(cell, x, dtype=tf.float32)
-            a_s = rnn_cell._linear([val], output_size= self.output_size)
-        with vs.scope("answer_end"):
-            val, _ = tf.nn.dynamic_rnn(cell, x, dtype=tf.float32)
-            a_e = rnn_cell._linear([val], output_size= self.output_size)
+        cell = tf.nn.rnn_cell.LSTMCell(self.FLAGS.state_size)
+        attention_ctx_vector = tf.expand_dims(attention_ctx_vector, 1)
+        attention_ctx_vector_tiled = tf.tile(attention_ctx_vector, tf.pack([1, tf.shape(context_par_vectors)[0], 1]))
+        rnn_input = tf.concat(1, [context_par_vectors, attention_ctx_vector_tiled])
+        with vs.variable_scope("answer_start"):
+            rnn_output, _ = tf.nn.dynamic_rnn(cell, rnn_input, dtype=tf.float32)
+            
+
+            a_s = tf.nn.rnn_cell._linear([val], output_size= self.output_size)
+        with vs.variable_scope("answer_end"):
+            val, _ = tf.nn.dynamic_rnn(cell, rnn_input, dtype=tf.float32)
+            a_e = tf.nn.rnn_cell._linear([val], output_size= self.output_size)
         return a_s, a_e
     
         """
@@ -207,26 +216,29 @@ class QASystem(object):
         :param args: pass in more arguments as needed
         """
 
+        # Get a link to tf.app.flags
+        self.FLAGS = tf.app.flags.FLAGS
+
         # ==== set up placeholder tokens ========
         # is this the way to do it????
         # do we need to do reshape like we did in q2_rnn
-        self.embeddings = tf.constant(tf.convert_to_tensor(embeddings, dtype = tf.float32), name = 'embedding')
+        self.embeddings = tf.convert_to_tensor(embeddings, dtype = tf.float32, name = 'embedding')
         self.encoder = encoder
         self.decoder = decoder
 
         # start answer and end answer
         # we probably need to change output_size to max_context_length or something similar
-        self.answer_start = tf.placeholder(shape = [None, self.FLAGS.output_size])
-        self.answer_end = tf.placeholder(shape = [None, self.FLAGS.output_size])
+        self.answer_start = tf.placeholder(tf.int32, shape = [None, self.FLAGS.output_size], name="answer_end")
+        self.answer_end = tf.placeholder(tf.int32, shape = [None, self.FLAGS.output_size], name="answer_end")
 
         # question, paragraph (context), answer, and dropout placeholders
-        self.question_placeholder = tf.placeholder(tf.int32, (None, FLAGS.question_max_length, FLAGS.embedding_size))
-        self.context_placeholder = tf.placeholder(tf.int32, (None, FLAGS.context_paragraph_max_length, FLAGS.embedding_size))
-        self.question_mask_placeholder = tf.placeholder(tf.boolean32, (None, FLAGS.question_paragraph_max_length))
-        self.context_mask_placeholder = tf.placeholder(tf.boolean32, (None, FLAGS.context_paragraph_max_length))
+        self.question_word_ids_placeholder = tf.placeholder(tf.int32, (None, self.FLAGS.question_max_length), name="question_word_ids_placeholder")
+        self.context_word_ids_placeholder = tf.placeholder(tf.int32, (None, self.FLAGS.context_paragraph_max_length), name="context_word_ids_placeholder")
+        self.question_mask = tf.sign(self.question_word_ids_placeholder, name ="question_mask")
+        self.context_mask = tf.sign(self.context_word_ids_placeholder, name ="context_mask")
         
-        self.answer_placeholder = tf.placeholder(tf.int32, (None, 2))
-        self.dropout_placeholder = tf.placeholder(tf.float32)
+        self.answer_placeholder = tf.placeholder(tf.int32, (None, 2), name="answer_placeholder")
+        self.dropout_placeholder = tf.placeholder(tf.float32, name="dropout_placeholder")
         
         # ==== assemble pieces ====
         with tf.variable_scope("qa", initializer=tf.uniform_unit_scaling_initializer(1.0)):
@@ -236,8 +248,8 @@ class QASystem(object):
 
         # ==== set up training/updating procedure ====
         params = tf.trainable_variables()
-        optimizer = FLAGS.optimizer
-        self.updates = get_optimizer(optimizer)(FLAGS.learning_rate).minimize(self.loss)
+        optimizer = self.FLAGS.optimizer
+        self.updates = get_optimizer(optimizer)(self.FLAGS.learning_rate).minimize(self.loss)
 
         
 
@@ -248,8 +260,7 @@ class QASystem(object):
         to assemble your reading comprehension system!
         :return:
         """
-        
-        attentionVector, contextVectors = self.encoder.encode(self.question_var, self.question_mask_var, self.paragraph_var, self.context_mask_var)
+        attentionVector, contextVectors = self.encoder.encode(self.question_var, self.question_mask, self.context_var, self.context_mask)
         self.a_s, self.a_e = self.decoder.decode(attentionVector, contextVectors)
         
         # q_o, q_h = encoder.encode(self.question_Var)
@@ -260,26 +271,18 @@ class QASystem(object):
     def create_feed_dict(self, question_batch, context_batch, answer_start_batch = None, answer_end_batch = None, dropout = None):
         feed_dict = {}
         
-        question_mask_batch = []
         for i in range(len(question_batch)):
-            q = [True] * len(question_batch[i])
-            for _ in range(FLAGS.question_max_length - len(question_batch[i])):
-                question_batch[i].append(0)
-                q.append(False)
-            question_mask_batch.append(q)
+            padding_length = self.FLAGS.question_max_length - len(question_batch[i])
+            padding = [0] * padding_length
+            question_batch[i].extend(padding)
 
-        feed_dict[self.question_mask_placeholder] = question_mask_batch
         feed_dict[self.question_placeholder] = question_batch
         
-        context_mask_batch = []
         for i in range(len(context_batch)):
-            q = [True] * len(context_batch[i])
-            for _ in range(FLAGS.context_paragraph_max_length - len(context_batch[i])):
-                context_batch[i].append(0)
-                q.append(False)
-            context_mask_batch.append(q)
-            
-        feed_dict[self.context_mask_placeholder] = context_mask_batch
+            padding_length = self.FLAGS.context_paragraph_max_length - len(context_batch[i])
+            padding = [0] * padding_length
+            context_batch[i].extend(padding)
+
         feed_dict[self.context_placeholder] = context_batch
             
         if answer_start_batch is not None:
@@ -312,10 +315,8 @@ class QASystem(object):
         with vs.variable_scope("embeddings"):
             #glove_matrix = np.load()['glove']
             #params = tf.constant(glove_matrix) # if you wanna train the embeddings too, put it in a variable (inside the init function)
-            self.question_var = tf.nn.embedding_lookup(self.embeddings, self.question_placeholder)
-            self.context_var = tf.nn.embedding_lookup(self.embeddings, self.context_placeholder)
-            self.question_mask_var = tf.nn.embedding_lookup(self.embeddings, self.question_mask_placeholder)
-            self.context_mask_var = tf.nn.embedding_lookup(self.embeddings, self.context_mask_placeholder)
+            self.question_var = tf.nn.embedding_lookup(self.embeddings, self.question_word_ids_placeholder)
+            self.context_var = tf.nn.embedding_lookup(self.embeddings, self.context_word_ids_placeholder)
 
     # this function calls answer bellow and is called by train at the bottom of the page
     # returns the f1 and em scores of an epoch
