@@ -144,46 +144,11 @@ class Encoder(object):
             attention = tf.nn.softmax(attention_scores) # dim = [batch_size, seq_len]
 
             # Take a weighted sum over the vectors in the rnn, the multiply broadcasts appropriately (1 over state_size)
-            attention_vector = tf.reduce_sum(tf.multiply(rnn_states, attention_vector), axis = 1) # before reduce sum dim = [batch_size, seq_len, state_size], after dim = [batch_size, state_size]
-            return attention_vector
+            attention_context_vector = tf.reduce_sum(tf.multiply(rnn_states, attention_vector), axis = 1) # before reduce sum dim = [batch_size, seq_len, state_size], after dim = [batch_size, state_size]
+            return attention_context_vector
 
 
             
-
-
-""" SHHHHHHIIIIIIEEEEET from coding session
-        question_length = FLAGS.question_max_length
-        context_paragraph_length = FLAGS.context_paragraph_length
-        dropout_rate = FLAGS.dropout
-
-        # TODO: get words from embeddings
-        distributed_questions = # questions input, dimensions [batch_size, question_lenth, embedding_dim] (n.b. embedding_dim = self.vocab_dim in the code)
-      
-        with vs.variable_scope(scope, reuse): # if you change the scope, you'll be using two different self.cell's
-            # build your dynamic_rnn in here
-            mask = tf.sign(context_paragraph)
-            context_len = tf.reduce_sum(mask, axis = 1)
-            o, _ = dynamic_rnn(self.cell, inputs, srclen = srclen, inputs_state=None) # the first returned value is a 3d object with all the hidden states
-            #(fw_o, bw_o), _ = bidirectional_dynamic_rnn(self.cell, self.cell, inputs) fw_o and bw_o are forward and backward things
-            o = tf.concat(fw_o[:,-1,:], bw_o[:,0,:])
-        return o # (N, T, d) N is the mini batch size, T is the length of the sentence or context, d is the dimension of each word
-    # encoder = Encoder()
-    # encoder.encode(question)
-    # encoder.encode(paragrapgh, resue=True) this will use the same cell since reuse=True
-    def  encode_w_attn(self, inputs, masks, prev_states, scope="", reuse = false):
-        self.attn_cell = AttnGRUCell = ArrnCRUCell(self.size, prev_states)
-        with vs.variable_scope(scope, reuse):
-            0, _= dynamic_rnn(self.attn_Cell, inputs, srclem=srclen, initial_state=None)
-
-class AttnGRUCell(rnn_cell.GRUCell):
-    def __init__():
-        # call super class
-        return
-    def __call__():
-        # this is called when it is created
-        return
-"""
-
 class Decoder(object):
     def __init__(self, output_size):
         self.output_size = output_size
@@ -238,7 +203,7 @@ class QASystem(object):
 
         # ==== set up training/updating procedure ====
         params = tf.trainable_vriables()
-        self.updates - get_optimizer(optimizer)(self.learning_rate).minimize(self.loss)
+        self.updates = get_optimizer(optimizer)(self.learning_rate).minimize(self.loss)
         # define an optimization proedure
         # sess.run(self.updates???)
 

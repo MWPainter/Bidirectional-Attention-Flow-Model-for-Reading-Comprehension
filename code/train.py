@@ -26,7 +26,7 @@ tf.app.flags.DEFINE_integer("embedding_size", 100, "Size of the pretrained vocab
 tf.app.flags.DEFINE_integer("question_max_length", 100, "Maximum length of an input question.")
 tf.app.flags.DEFINE_integer("context_paragraph_max_length", 1000, "Maximum length of a context paragraph.")
 tf.app.flags.DEFINE_string("data_dir", "data/squad", "SQuAD directory (default ./data/squad)")
-tf.app.flags.DEFINE_string("train_dir", "train", "Training directory to save the model parameters (default: ./train).")
+tf.app.flags.DEFINE_string("train_dir", "train/model1", "Training directory to save the model parameters (default: ./train).")
 tf.app.flags.DEFINE_string("load_train_dir", "", "Training directory to load model parameters from to resume training (default: {train_dir}).")
 tf.app.flags.DEFINE_string("log_dir", "log", "Path to store log and flag files (default: ./log)")
 tf.app.flags.DEFINE_string("optimizer", "adam", "adam / sgd")
@@ -105,7 +105,7 @@ def load_train_dataset(data_dir):
             answers.append(answer)
     
     training_set = zip(questions, contexts, answers)
-    return training_set
+    return training_set 
             
 
 def main(_):
@@ -139,6 +139,9 @@ def main(_):
         initialize_model(sess, qa, load_train_dir)
 
         save_train_dir = get_normalized_train_dir(FLAGS.train_dir)
+        if not os.path.exists(save_train_dir):
+            os.makedirs(save_train_dir)
+        create_train_dir = (save_train_dir)
         qa.train(sess, dataset, save_train_dir)
 
         qa.evaluate_answer(sess, dataset, vocab, FLAGS.evaluate, log=True)
