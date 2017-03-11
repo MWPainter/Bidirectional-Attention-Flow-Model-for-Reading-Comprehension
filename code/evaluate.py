@@ -12,17 +12,13 @@ def normalize_answer(s):
     """Lower text and remove punctuation, articles and extra whitespace."""
     def remove_articles(text):
         return re.sub(r'\b(a|an|the)\b', ' ', text)
-
     def white_space_fix(text):
         return ' '.join(text.split())
-
     def remove_punc(text):
         exclude = set(string.punctuation)
         return ''.join(ch for ch in text if ch not in exclude)
-
     def lower(text):
         return text.lower()
-
     return white_space_fix(remove_articles(remove_punc(lower(s))))
 
 
@@ -38,9 +34,24 @@ def f1_score(prediction, ground_truth):
     f1 = (2 * precision * recall) / (precision + recall)
     return f1
 
+def f1_score_ours(prediction, ground_truth):
+    if len(prediction) <= 0 or len(ground_truth) <= 0:
+        return 0
+    if prediction[0] > prediction[1]:
+        return 0
+    ours = range(prediction[0], prediction[1]+1)
+    truth = range(ground_truth[0], ground_truth[1]+1)
+    common = Counter(ours) & Counter(truth)
+    num_same = sum(common.values())
+    if num_same == 0:
+        return 0
+    precision = 1.0 * num_same / len(ours)
+    recall = 1.0 * num_same / len(truth)
+    f1 = (2 * precision * recall) / (precision + recall)
+    return f1
 
 def exact_match_score(prediction, ground_truth):
-    return (normalize_answer(prediction) == normalize_answer(ground_truth))
+    return 1.0 * ((prediction[0] == ground_truth[0]) and (prediction[1] == ground_truth[1]))
 
 
 def metric_max_over_ground_truths(metric_fn, prediction, ground_truths):

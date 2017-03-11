@@ -78,7 +78,7 @@ def get_normalized_train_dir(train_dir):
     os.symlink(os.path.abspath(train_dir), global_train_dir)
     return global_train_dir
 
-def load_train_dataset(data_dir):
+def load_dataset(data_dir, train_val):
     """
     Loads the training data from the data directory
     A question is a list of indices into the embeddings matrix
@@ -87,43 +87,46 @@ def load_train_dataset(data_dir):
     The training dataset contains a list of (question, context, answer) tuples
     """
     questions = []
-    with open(data_dir + "/train.ids.question") as question_id_file:
+    with open(data_dir + "/" + train_val + ".ids.question") as question_id_file:
         for line in question_id_file:
             question = map(int, line.split(" ")) # map applies int(_) to all the strings to convert
             questions.append(question)
     
     contexts = []
-    with open(data_dir + "/train.ids.context") as context_id_file:
+    with open(data_dir + "/" + train_val + ".ids.context") as context_id_file:
         for line in context_id_file:
             context = map(int, line.split(" "))
             contexts.append(context)
 
-    answers = []
-    with open(data_dir + "/train.span") as answers_file: # span file contains the indices of the answers into the context paragraph
+    start_answers = []
+    end_answers = []
+    with open(data_dir + "/" + train_val + ".span") as answers_file: # span file contains the indices of the answers into the context paragraph
         for line in answers_file:
             answer = map(int, line.split(" "))
-            answers.append(answer)
+            start_answers.append([answer[0]])
+            end_answers.append([answer[1]])
     
-    training_set = zip(questions, contexts, answers)
-    return training_set 
+    training_set = zip(questions, contexts, start_answers, end_answers)
+    return training_set
             
 
 def main(_):
 
     # Do what you need to load datasets from FLAGS.data_dir
-    dataset = load_train_dataset(FLAGS.data_dir)
-
+    train_dataset = load_dataset(FLAGS.data_dir, "train")
+    val_dataset = load_dataset(FLAGS.data_dir, "val")
+    
     embed_path = FLAGS.embed_path or pjoin("data", "squad", "glove.trimmed.{}.npz".format(FLAGS.embedding_size))
     vocab_path = FLAGS.vocab_path or pjoin(FLAGS.data_dir, "vocab.dat")
     vocab, rev_vocab = initialize_vocab(vocab_path) # vocab = {words : indices}, rev_vocab = [words] (where each word is at index as dictated by vocab)
-
+    
     # load in the embeddings
     embeddings = np.load(embed_path)['glove']
 
     encoder = Encoder(size=FLAGS.state_size, vocab_dim=FLAGS.embedding_size, embeddings=embeddings)
     decoder = Decoder(output_size=FLAGS.output_size)
 
-    qa = QASystem(encoder, decoder)
+    qa = QASystem(encoder, decoder, embeddings)
 
     if not os.path.exists(FLAGS.log_dir):
         os.makedirs(FLAGS.log_dir)
