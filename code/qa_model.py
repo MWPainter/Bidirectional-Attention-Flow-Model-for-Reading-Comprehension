@@ -6,10 +6,11 @@ import time
 import logging
 
 import numpy as np
-from six.moves import xrange  # pylint: disable=redefined-builtin
+f
+rom six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 from tensorflow.python.ops import variable_scope as vs
-
+from util import get_minibatches
 from evaluate import exact_match_score, f1_score_ours
 
 logging.basicConfig(level=logging.INFO)
@@ -335,7 +336,7 @@ class QASystem(object):
 
 
     # check whether the for loop is necessary. feel like should work with the full batch
-    def evaluate_answer(self, session, paragraphs, questions, answers_start, answers_end, sample=100, log=False):
+    def evaluate_answer(self, session, dataset, sample=100, log=False):
         """
         Evaluate the model's performance using the harmonic mean of F1 and Exact Match (EM)
         with the set of true answer labels
@@ -351,17 +352,21 @@ class QASystem(object):
         :return:
         """
 
-        ######### the f1_score and exact_match_score functions defined work with strings
+        ######### the f1_score and exact_match_score functions defined work only with strings
         ######### need to write new ones that work with lists like below 
         
         f1 = 0.
         em = 0.
-
-        for p, q, r1, r2 in zip(paragraphs, questions, answers_start, answers_end):
-            a_s, a_e = self.answer(session, p, q)
-            answer = p[a_s, a_e]
-            f1 += f1_score_ours(answer, [r1, r2])
-            em += exact_match_score(answer, [r1, r2])
+        indices = np.arange(len(dataset[0]))
+        np.random.shuffle(indices)
+        indices = indices[:sample]
+        
+        for i in range(sample):
+            q, p, r1, r2 = [d[indices[i]] for d in dataset]
+            true_answer = [r1, r2]
+            prediction = self.answer(session, p, q)
+            f1 += f1_score_ours(prediction, true_answer)
+            em += exact_match_score(prediction, true_answer)
         if log:
             logging.info("F1: {}, EM: {}, for {} samples".format(f1, em, sample))
 
@@ -376,7 +381,7 @@ class QASystem(object):
 
         a_s = np.argmax(yp1, axis = 1)
         a_e = np.argmax(yp2, axis = 1)
-        return (a_s, a_e)
+        return [a_s, a_e]
     
     # this function is only called by answer above. returns probabilities for the start and end words
     
@@ -395,24 +400,20 @@ class QASystem(object):
         return outputs    
 
 
-    def optimize(self, session, question_batch, context_batch, answer_start_batch, answer_end_batch):
+    def optimize(self, session, dataset):
         """
         Takes in actual data to optimize your model
         This method is equivalent to a step() function
         :return:
         """
-        input_feed = self.create_feed_dict(question_batch, context_batch, answer_start_batch, answer_end_batch)
+        loss = 0.0
+        for question_batch, context_batch, answer_start_batch, answer_end_batch in get_minibatches(dataset, self.FLAGS.batch_size):
+            input_feed = self.create_feed_dict(question_batch, context_batch, answer_start_batch, answer_end_batch)
+            output_feed = [self.updates, self.loss]
+            outputs = session.run(output_feed, feed_dict = input_feed)
+            loss += outputs[1]
 
-        # fill in this feed_dictionary like:
-        # input_feed['train_x'] = train_x
-
-
-        #grad_norm, param_norm
-        output_feed = [self.updates, self.loss]
-
-        outputs = session.run(output_feed, feed_dict = input_feed)
-
-        return outputs[1]
+        return loss
 
     def train(self, session, train_dataset, val_dataset, train_dir):
         """
@@ -452,14 +453,14 @@ class QASystem(object):
         q_val, p_val, a_val_s, a_val_e = val_dataset
         q, p, a_s, a_e = train_dataset 
         for e in range(self.FLAGS.epochs):
-            loss = self.optimize(session, q, p, a_s, a_e)
+            loss = self.optimize(session, train_dataset)
             # save your model here
             saver = tf.saver()
             saver.save(session, train_dir + "epoch_" + str(e))
-            val_loss = self.validate(p_val, val_dataset)
+            val_loss = self.validate(session, val_dataset)
 
-            self.evaluate_answer(session, q_val, p_val, a_val_s, a_val_e, 100, True)
-            self.evaluate_answer(session, q, p, a_s, a_e, 100, True) # doing this cuz we wanna make sure it at least works well for the stuff it's already seen
+            self.evaluate_answer(session, val_dataset, 100, True)
+            self.evaluate_answer(session, train_dataset, 100, True) # doing this cuz we wanna make sure it at least works well for the stuff it's already seen
                         
 
 
@@ -478,36 +479,26 @@ class QASystem(object):
 
         :return:
         """
-
-        question, context, start_answer, end_answer = valid_dataset
-        valid_cost = self.test(sess, question, context, start_answer, end_answer)
+        valid_dataset = 0
+        for question_batch, context_batch, answer_start_batch, answer_end_batch in get_minibatches(valid_dataset, self.FLAGS.batch_size):
+            valid_cost += self.test(sess, question_batch, context_batch, answer_start_batch, answer_end_batch)
 
         return valid_cost
 
     
     # the following function is called from validate above
     
-    def test(self, session, question, paragraph, answer_start, answer_end):
+    def test(self, session, question_batch, context_batch, answer_start_batch, answer_end_batch):
         """
         in here you should compute a cost for your validation set
         and tune your hyperparameters according to the validation set performance
         :return:
         """
-        input_feed = {}
-
-        # fill in this feed_dictionary like:
-        # input_feed['valid_x'] = valid_x
-        input_feed = self.create_feed_dict(paragraph, question, answer_start, answer_end)
-        """
-        input_feed[self.context_var] = paragraph
-        input_feed[self.question_var] = question
-        input_feed[self.answer_start] = answer_start
-        input_feed[self.answer_end] = answer_end
-        """
-        output_feed = [self.loss]
-
-        outputs = session.run(output_feed, input_feed) # sessions always return real things
-        return outputs
+        output_feed = [self.loss]     
+        input_feed = self.create_feed_dict(question_batch, context_batch, answer_start_batch, answer_end_batch)
+        loss = session.run(output_feed, input_feed) # sessions always return real things
+            
+        return loss
 
 
 
