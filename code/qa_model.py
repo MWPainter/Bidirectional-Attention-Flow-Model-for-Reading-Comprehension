@@ -364,9 +364,10 @@ class QASystem(object):
         
         for i in range(sample):
             q, p, r1, r2 = [d[indices[i]] for d in dataset]
-            true_answer = [r1, r2]
+            true_answer = ' '.join([str(p[i]) for i in range(r1,r2+1)])
             prediction = self.answer(session, p, q)
-            f1 += f1_score_ours(prediction, true_answer)
+            prediction = ' '.join([str(p[i]) for i in range(prediction[0], prediction[1]+1)])
+            f1 += f1_score(prediction, true_answer)
             em += exact_match_score(prediction, true_answer)
         if log:
             logging.info("F1: {}, EM: {}, for {} samples".format(f1, em, sample))
