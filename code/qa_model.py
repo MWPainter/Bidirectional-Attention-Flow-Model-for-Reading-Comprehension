@@ -10,7 +10,7 @@ from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 from tensorflow.python.ops import variable_scope as vs
 from util import get_minibatches, flatten
-from evaluate import exact_match_score, f1_score_ours
+from evaluate import exact_match_score, f1_score
 
 logging.basicConfig(level=logging.INFO)
 
@@ -284,20 +284,21 @@ class QASystem(object):
         
     def create_feed_dict(self, question_batch, context_batch, answer_start_batch = None, answer_end_batch = None, dropout = None):
         feed_dict = {}
-        
+       	list_data = type(context_batch) is list and (type(context_batch[0]) is list or type(context_batch[0]) is np.ndarray) 
+	if not list_data:
+	    context_batch = [context_batch]
+	    question_batch = [question_batch]
         for i in range(len(question_batch)):
             padding_length = self.FLAGS.question_max_length - len(question_batch[i])
-            padding = [0] * padding_length
+	    padding = [0] * padding_length
             question_batch[i].extend(padding)
+	feed_dict[self.question_word_ids_placeholder] = question_batch
 
-        feed_dict[self.question_word_ids_placeholder] = question_batch
-        
-        for i in range(len(context_batch)):
+	for i in range(len(context_batch)):
             padding_length = self.FLAGS.context_paragraph_max_length - len(context_batch[i])
             padding = [0] * padding_length
             context_batch[i].extend(padding)
-
-        feed_dict[self.context_word_ids_placeholder] = context_batch
+	feed_dict[self.context_word_ids_placeholder] = context_batch
             
         if answer_start_batch is not None:
             feed_dict[self.answer_start] = answer_start_batch
@@ -366,8 +367,10 @@ class QASystem(object):
             q, p, r1, r2 = [d[indices[i]] for d in dataset]
             true_answer = [r1, r2]
             prediction = self.answer(session, p, q)
-            f1 += f1_score_ours(prediction, true_answer)
+            f1 += f1_score(prediction, true_answer)
             em += exact_match_score(prediction, true_answer)
+	print("Ma f1 score: {}" % f1)
+	print("Ma em score: {}" % em)
         if log:
             logging.info("F1: {}, EM: {}, for {} samples".format(f1, em, sample))
 
@@ -393,9 +396,9 @@ class QASystem(object):
         could we just have the following?
         input_feed = create_feed_dict(test_paragraph, test_question)
         """
-        input_feed[self.context_var] = test_paragraph
-        input_feed[self.question_var] = test_question
-
+	#input_feed[self.context_var] = test_paragraph
+        #input_feed[self.question_var] = test_question
+	input_feed = self.create_feed_dict(test_question, test_paragraph)
         output_feed = [self.a_s, self.a_e]
         outputs = session.run(output_feed, feed_dict = input_feed)
         return outputs    
@@ -458,7 +461,7 @@ class QASystem(object):
         for e in range(self.FLAGS.epochs):
             loss = self.optimize(session, train_dataset)
             # save your model here
-            saver = tf.saver()
+            saver = tf.train.Saver()
             saver.save(session, train_dir + "epoch_" + str(e))
             val_loss = self.validate(session, val_dataset)
 
@@ -482,7 +485,7 @@ class QASystem(object):
 
         :return:
         """
-        valid_dataset = 0
+	valid_cost = 0.
         for question_batch, context_batch, answer_start_batch, answer_end_batch in get_minibatches(valid_dataset, self.FLAGS.batch_size):
             valid_cost += self.test(sess, question_batch, context_batch, answer_start_batch, answer_end_batch)
 
@@ -498,8 +501,10 @@ class QASystem(object):
         :return:
         """
         output_feed = [self.loss]     
+        answer_start_batch = flatten(answer_start_batch) # batch returns dim=[batch_size,1] need dim=[batch_size,]
+        answer_end_batch = flatten(answer_end_batch) # batch returns dim=[batch_size,1] need dim=[batch_size,]
         input_feed = self.create_feed_dict(question_batch, context_batch, answer_start_batch, answer_end_batch)
-        loss = session.run(output_feed, input_feed) # sessions always return real things
+        loss = np.sum(session.run(output_feed, input_feed)) # sessions always return real things
             
         return loss
 

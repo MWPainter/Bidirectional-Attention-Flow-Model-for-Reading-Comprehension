@@ -24,7 +24,7 @@ tf.app.flags.DEFINE_integer("state_size", 100, "Size of each model layer.")
 tf.app.flags.DEFINE_integer("output_size", 750, "The output size of your model.")
 tf.app.flags.DEFINE_integer("embedding_size", 100, "Size of the pretrained vocabulary.")
 tf.app.flags.DEFINE_integer("question_max_length", 100, "Maximum length of an input question.")
-tf.app.flags.DEFINE_integer("context_paragraph_max_length", 1000, "Maximum length of a context paragraph.")
+tf.app.flags.DEFINE_integer("context_paragraph_max_length", 800, "Maximum length of a context paragraph.")
 tf.app.flags.DEFINE_string("data_dir", "data/squad", "SQuAD directory (default ./data/squad)")
 tf.app.flags.DEFINE_string("train_dir", "train/model1", "Training directory to save the model parameters (default: ./train).")
 tf.app.flags.DEFINE_string("load_train_dir", "", "Training directory to load model parameters from to resume training (default: {train_dir}).")
@@ -35,7 +35,7 @@ tf.app.flags.DEFINE_integer("keep", 0, "How many checkpoints to keep, 0 indicate
 tf.app.flags.DEFINE_string("vocab_path", "data/squad/vocab.dat", "Path to vocab file (default: ./data/squad/vocab.dat)")
 tf.app.flags.DEFINE_string("embed_path", "", "Path to the trimmed GLoVe embedding (default: ./data/squad/glove.trimmed.{embedding_size}.npz)")
 tf.app.flags.DEFINE_boolean("debug", True, "Are we debugging?")
-tf.app.flags.DEFINE_integer("debug_training_size", 200, "A smaller training size for debugging, so that epochs are quick, and we can test logging etc")
+tf.app.flags.DEFINE_integer("debug_training_size", 100, "A smaller training size for debugging, so that epochs are quick, and we can test logging etc")
 
 FLAGS = tf.app.flags.FLAGS
 
