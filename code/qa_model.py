@@ -180,14 +180,26 @@ class Decoder(object):
         rnn_input = tf.concat(1, [context_par_vectors, attention_ctx_vector_tiled])
         with vs.variable_scope("answer_start"):
             rnn_output, _ = tf.nn.dynamic_rnn(cell, rnn_input, dtype=tf.float32)
-            
+            a_s = self.linear(rnn_output, reuse=True) 
 
-            a_s = tf.nn.rnn_cell._linear([val], output_size= self.output_size)
         with vs.variable_scope("answer_end"):
-            val, _ = tf.nn.dynamic_rnn(cell, rnn_input, dtype=tf.float32)
-            a_e = tf.nn.rnn_cell._linear([val], output_size= self.output_size)
+            rnn_output, _ = tf.nn.dynamic_rnn(cell, rnn_input, dtype=tf.float32)
+            a_e = self.linear(rnn_output, reuse=True) 
         return a_s, a_e
     
+
+    def linear(self, rnn_output, scope="default_linear", reuse=False):
+        with vs.variable_scope(scope, reuse):
+            weights = tf.get_variable("weights", shape=(self.FLAGS.state_size, 1), dtype=tf.float32, initializer=tf.contrib.layers.xavier_initializer())
+            weights_tiled = tf.expand_dims(weights, axis=0)
+            weights_tiled = tf.tile(weights_tiled, tf.pack([tf.shape(rnn_output)[0], 1, 1]))
+            bias = tf.get_variable("bias", shape=(self.FLAGS.context_paragraph_max_length,), dtype=tf.float32, initializer=tf.constant_initializer(0.0))
+            result = tf.add(tf.matmul(rnn_output, weights_tiled), bias)
+            return result
+
+
+    
+
         """
         # h_q, h_p: 2-d TF variable
         with vs.scope("answer_start"):
@@ -276,14 +288,14 @@ class QASystem(object):
             padding = [0] * padding_length
             question_batch[i].extend(padding)
 
-        feed_dict[self.question_placeholder] = question_batch
+        feed_dict[self.question_word_ids_placeholder] = question_batch
         
         for i in range(len(context_batch)):
             padding_length = self.FLAGS.context_paragraph_max_length - len(context_batch[i])
             padding = [0] * padding_length
             context_batch[i].extend(padding)
 
-        feed_dict[self.context_placeholder] = context_batch
+        feed_dict[self.context_word_ids_placeholder] = context_batch
             
         if answer_start_batch is not None:
             feed_dict[self.answer_start] = answer_start_batch
@@ -438,16 +450,16 @@ class QASystem(object):
         toc = time.time()
         logging.info("Number of params: %d (retreival took %f secs)" % (num_params, toc - tic))
         q_val, p_val, a_val_s, a_val_e = val_dataset
+        q, p, a_s, a_e = train_dataset 
         for e in range(self.FLAGS.epochs):
-            for q, p, a_s, a_e in train_dataset[e]:
-                loss = self.optimize(session, q, p, a_s, a_e)
-                # save your model here
-                saver = tf.saver()
-                saver.save(session, train_dir + "epoch_" + str(e))
-                val_loss = self.validate(p_val, val_dataset)
+            loss = self.optimize(session, q, p, a_s, a_e)
+            # save your model here
+            saver = tf.saver()
+            saver.save(session, train_dir + "epoch_" + str(e))
+            val_loss = self.validate(p_val, val_dataset)
 
-                self.evaluate_answer(session, q_val, p_val, a_val_s, a_val_e, 100, True)
-                self.evaluate_answer(session, q, p, a_s, a_e, 100, True) # doing this cuz we wanna make sure it at least works well for the stuff it's already seen
+            self.evaluate_answer(session, q_val, p_val, a_val_s, a_val_e, 100, True)
+            self.evaluate_answer(session, q, p, a_s, a_e, 100, True) # doing this cuz we wanna make sure it at least works well for the stuff it's already seen
                         
 
 

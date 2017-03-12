@@ -106,7 +106,7 @@ def load_dataset(data_dir, train_val):
             start_answers.append([answer[0]])
             end_answers.append([answer[1]])
     
-    training_set = zip(questions, contexts, start_answers, end_answers)
+    training_set = [questions, contexts, start_answers, end_answers]
     return training_set
             
 
@@ -145,9 +145,9 @@ def main(_):
         if not os.path.exists(save_train_dir):
             os.makedirs(save_train_dir)
         create_train_dir = (save_train_dir)
-        qa.train(sess, dataset, save_train_dir)
+        qa.train(sess, train_dataset, val_dataset, save_train_dir)
 
-        qa.evaluate_answer(sess, dataset, vocab, FLAGS.evaluate, log=True)
+        qa.evaluate_answer(sess, val_dataset, vocab, FLAGS.evaluate, log=True)
 
 if __name__ == "__main__":
     tf.app.run()
