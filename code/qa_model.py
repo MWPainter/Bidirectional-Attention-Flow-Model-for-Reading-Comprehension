@@ -6,11 +6,10 @@ import time
 import logging
 
 import numpy as np
-f
-rom six.moves import xrange  # pylint: disable=redefined-builtin
+from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 from tensorflow.python.ops import variable_scope as vs
-from util import get_minibatches
+from util import get_minibatches, flatten
 from evaluate import exact_match_score, f1_score_ours
 
 logging.basicConfig(level=logging.INFO)
@@ -103,7 +102,7 @@ class Encoder(object):
         # we think second output is the ("true") final state, but TF docs are ambiguous AF, so I don't really know. There may be problems here...
         with vs.variable_scope(scope, reuse):
             input_length = tf.reduce_sum(mask, axis=1) # dim = [batch_size]
-            (fw_outputs, bw_outputs), _ = tf.nn.bidirectional_dynamic_rnn(self.cell, self.cell, inpt, sequence_length=input_length, dtype=tf.float32) 
+            (fw_outputs, bw_outputs), _ = tf.nn.bidirectional_dynamic_rnn(self.cell, self.cell, inpt, sequence_length=input_length, dtype=tf.float32, time_major=False) 
             fw_final_state = fw_outputs[:,-1,:]
             bw_final_state = bw_outputs[:,0,:]
             representation = tf.concat(1, [fw_final_state, bw_final_state])
@@ -136,10 +135,10 @@ class Encoder(object):
             inner_product_matrix_tiled = tf.expand_dims(tf.expand_dims(inner_product_matrix, 0), 0) # dim = [1, 1, statesize, statesize]
             inner_product_matrix_tiled = tf.tile(inner_product_matrix_tiled, tf.pack([batch_size, seq_len, 1, 1])) # dim = [batch_size, seq_len, statesize, statesize]
             cur_state_tiled = tf.expand_dims(cur_state, 1) # dim = [batch_size, 1, statesize]
-            cur_state_tiled = tf.tile(cur_state_tiled, tf.pack([batch_size, seq_len, 1])) # dim = [batch_size, seq_len, statesize]
+            cur_state_tiled = tf.tile(cur_state_tiled, tf.pack([1, seq_len, 1])) # dim = [batch_size, seq_len, statesize]
             cur_state_tiled = tf.expand_dims(cur_state_tiled, 3) # dim = [batch_size, seq_len, state_size, 1]
             rnn_state_expanded = tf.expand_dims(rnn_states, 2) # dim = [batch_size, seq_len, 1, state_size]
-
+            
             # Matrix product. Each input is a rank 4 tensor. For each index in batch_size, seq_len, we comupute an quadratic form. [1, state_size] * [state_size, state_size] * [state_size, 1]
             attention_scores = tf.matmul(tf.matmul(rnn_state_expanded, inner_product_matrix_tiled), cur_state_tiled) # dim = [batch_size, seq_len, 1, 1]
             attention_scores = tf.reduce_max(tf.reduce_max(attention_scores, axis=3), axis=2) # dim = [batch_size, seq_len], just used to reduce rank of tensor
@@ -177,8 +176,8 @@ class Decoder(object):
         
         cell = tf.nn.rnn_cell.LSTMCell(self.FLAGS.state_size)
         attention_ctx_vector = tf.expand_dims(attention_ctx_vector, 1)
-        attention_ctx_vector_tiled = tf.tile(attention_ctx_vector, tf.pack([1, tf.shape(context_par_vectors)[0], 1]))
-        rnn_input = tf.concat(1, [context_par_vectors, attention_ctx_vector_tiled])
+        attention_ctx_vector_tiled = tf.tile(attention_ctx_vector, tf.pack([1, tf.shape(context_par_vectors)[1], 1]))
+        rnn_input = tf.concat(2, [context_par_vectors, attention_ctx_vector_tiled])
         with vs.variable_scope("answer_start"):
             rnn_output, _ = tf.nn.dynamic_rnn(cell, rnn_input, dtype=tf.float32)
             a_s = self.linear(rnn_output, reuse=True) 
@@ -195,7 +194,9 @@ class Decoder(object):
             weights_tiled = tf.expand_dims(weights, axis=0)
             weights_tiled = tf.tile(weights_tiled, tf.pack([tf.shape(rnn_output)[0], 1, 1]))
             bias = tf.get_variable("bias", shape=(self.FLAGS.context_paragraph_max_length,), dtype=tf.float32, initializer=tf.constant_initializer(0.0))
-            result = tf.add(tf.matmul(rnn_output, weights_tiled), bias)
+            matmul = tf.matmul(rnn_output, weights_tiled) 
+            matmul = tf.reduce_max(matmul, axis=2) # dim = [batch_size, context_len, 1] -> [batch_size, context_len]
+            result = tf.add(matmul, bias)
             return result
 
 
@@ -241,8 +242,8 @@ class QASystem(object):
 
         # start answer and end answer
         # we probably need to change output_size to max_context_length or something similar
-        self.answer_start = tf.placeholder(tf.int32, shape = [None, self.FLAGS.output_size], name="answer_end")
-        self.answer_end = tf.placeholder(tf.int32, shape = [None, self.FLAGS.output_size], name="answer_end")
+        self.answer_start = tf.placeholder(tf.int32, shape = (None,), name="answer_end")
+        self.answer_end = tf.placeholder(tf.int32, shape = (None,), name="answer_end")
 
         # question, paragraph (context), answer, and dropout placeholders
         self.question_word_ids_placeholder = tf.placeholder(tf.int32, (None, self.FLAGS.question_max_length), name="question_word_ids_placeholder")
@@ -315,8 +316,8 @@ class QASystem(object):
         :return:
         """
         with vs.variable_scope("loss"):
-            l1 = tf.nn.sparse_softmax_cross_entropy_with_logits(self.a_s, self.answer_start)
-            l2 = tf.nn.sparse_softmax_cross_entropy_with_logits(self.a_e, self.answer_end)
+            l1 = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.a_s, labels=self.answer_start)
+            l2 = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.a_e, labels=self.answer_end)
             self.loss = l1 + l2
             
 
@@ -408,6 +409,8 @@ class QASystem(object):
         """
         loss = 0.0
         for question_batch, context_batch, answer_start_batch, answer_end_batch in get_minibatches(dataset, self.FLAGS.batch_size):
+            answer_start_batch = flatten(answer_start_batch) # batch returns dim=[batch_size,1] need dim=[batch_size,]
+            answer_end_batch = flatten(answer_end_batch) # batch returns dim=[batch_size,1] need dim=[batch_size,]
             input_feed = self.create_feed_dict(question_batch, context_batch, answer_start_batch, answer_end_batch)
             output_feed = [self.updates, self.loss]
             outputs = session.run(output_feed, feed_dict = input_feed)

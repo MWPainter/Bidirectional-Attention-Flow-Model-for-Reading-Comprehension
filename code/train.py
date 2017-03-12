@@ -34,6 +34,8 @@ tf.app.flags.DEFINE_integer("print_every", 1, "How many iterations to do per pri
 tf.app.flags.DEFINE_integer("keep", 0, "How many checkpoints to keep, 0 indicates keep all.")
 tf.app.flags.DEFINE_string("vocab_path", "data/squad/vocab.dat", "Path to vocab file (default: ./data/squad/vocab.dat)")
 tf.app.flags.DEFINE_string("embed_path", "", "Path to the trimmed GLoVe embedding (default: ./data/squad/glove.trimmed.{embedding_size}.npz)")
+tf.app.flags.DEFINE_boolean("debug", True, "Are we debugging?")
+tf.app.flags.DEFINE_integer("debug_training_size", 200, "A smaller training size for debugging, so that epochs are quick, and we can test logging etc")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -106,7 +108,10 @@ def load_dataset(data_dir, train_val):
             start_answers.append([answer[0]])
             end_answers.append([answer[1]])
     
+    # if we are debugging, we only want to return the first 200 or so examples from the training set
     training_set = [questions, contexts, start_answers, end_answers]
+    if (FLAGS.debug):
+        training_set = [s[:FLAGS.debug_training_size] for s in training_set]
     return training_set
             
 

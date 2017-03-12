@@ -13,3 +13,6 @@ def get_minibatches(data, minibatch_size, shuffle=True):
         minibatch_indices = indices[minibatch_start:minibatch_start + minibatch_size]
         yield [minibatch(d, minibatch_indices) for d in data] if list_data \
             else minibatch(data, minibatch_indices)
+
+def flatten(llist):
+    return [item for sublist in llist for item in sublist]
