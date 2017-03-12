@@ -1,0 +1,15 @@
+Created model with fresh parameters.
+Num params: 764600
+Created model with fresh parameters.
+Num params: 764600
+Created model with fresh parameters.
+Num params: 764600
+Created model with fresh parameters.
+Num params: 764600
+Number of params: 764600 (retreival took 1.115851 secs)
+Created model with fresh parameters.
+Num params: 764600
+Number of params: 764600 (retreival took 1.113109 secs)
+Created model with fresh parameters.
+Num params: 764600
+Number of params: 764600 (retreival took 1.114278 secs)
