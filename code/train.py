@@ -38,7 +38,7 @@ tf.app.flags.DEFINE_boolean("debug", True, "Are we debugging?")
 tf.app.flags.DEFINE_integer("debug_training_size", 500, "A smaller training size for debugging, so that epochs are quick, and we can test logging etc")
 tf.app.flags.DEFINE_boolean("log_score", True, "If we want to log f1 and em score in a txt file, alongside the model params in the pa4/train/<model_name> directory")
 tf.app.flags.DEFINE_string("model_name", "baseline", "The model to use, pick from: 'baseline', 'embedding_backprop', 'deep_encoder_2layer', 'deep_encoder_3layer', 'deep_decoder_2layer', 'QRNNs'")
-tf.app.flags.DEFINE_boolean("clip_norms", False, "Do we wish to clip norms?")
+tf.app.flags.DEFINE_boolean("clip_norms", True, "Do we wish to clip norms?")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -139,11 +139,12 @@ def main(_):
 
     with tf.Session() as sess:
         load_train_dir = get_normalized_train_dir(FLAGS.load_train_dir or FLAGS.train_dir)
-        load_train_dir += FLAGS.model_name # each model gets its own subdirectory
+        load_train_dir += "/" + FLAGS.model_name # each model gets its own subdirectory
         initialize_model(sess, qa, load_train_dir)
 
         save_train_dir = get_normalized_train_dir(FLAGS.train_dir)
-        save_train_dir += FLAGS.model_name # each model gets its own subdirectory
+        save_train_dir += "/" + FLAGS.model_name # each model gets its own subdirectory
+        print(save_train_dir)
         if not os.path.exists(save_train_dir):
             os.makedirs(save_train_dir)
         create_train_dir = (save_train_dir)
