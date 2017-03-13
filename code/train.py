@@ -152,7 +152,6 @@ def main(_):
         create_train_dir = (save_train_dir)
         qa.train(sess, train_dataset, val_dataset, save_train_dir)
 
-        qa.evaluate_answer(sess, val_dataset, vocab, FLAGS.evaluate, log=True)
 
 if __name__ == "__main__":
     tf.app.run()

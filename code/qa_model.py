@@ -455,17 +455,38 @@ class QASystem(object):
         num_params = sum(map(lambda t: np.prod(tf.shape(t.value()).eval()), params))
         toc = time.time()
         logging.info("Number of params: %d (retreival took %f secs)" % (num_params, toc - tic))
+
+        # Make files to append the scores as we get them
+        training_scores_filename = train_dir + "/training_scores.txt"
+        validation_scores_filename = train_dir + "/validation_scores.txt"
+        self.append_file_line(training_score_filename, "Epoch", "F1_score", "EM_score", "Epoch_time")
+        self.append_file_line(validation_score_filename, "Epoch", "F1_score", "EM_score", "Epoch_time")
+
         q_val, p_val, a_val_s, a_val_e = val_dataset
         q, p, a_s, a_e = train_dataset 
         for e in range(self.FLAGS.epochs):
+            tic = time.time()
             loss = self.optimize(session, train_dataset)
+            toc = time.time()
+            epoch_time = toc - tic
             # save your model here
             saver = tf.train.Saver()
             saver.save(session, train_dir + "/model_params", global_step=e)
             val_loss = self.validate(session, val_dataset)
 
-            self.evaluate_answer(session, val_dataset, 100, True)
-            self.evaluate_answer(session, train_dataset, 100, True) # doing this cuz we wanna make sure it at least works well for the stuff it's already seen
+            f1_train, em_train = self.evaluate_answer(session, train_dataset, 100, True) # doing this cuz we wanna make sure it at least works well for the stuff it's already seen
+            f1_val, em_val = self.evaluate_answer(session, val_dataset, 100, True)
+            
+            # Log scores
+            self.append_file_line(training_score_filename, e, f1_train, em_train, epoch_time)
+            self.append_file_line(validation_score_filename, e, f1_val, em_val, epoch_time)
+            
+
+    
+    # A function to write out epoch times and corresponding 
+    def append_file_line(self, filename, epoch, f1_score, em_score, epoch_time):
+        with open(filename, "a") as my_file:
+            my_file.write(" ".join([str(epoch), str(f1_score), str(em_score), str(epoch_time)]) + "\n")
                         
 
 
