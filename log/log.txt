@@ -187,3 +187,85 @@ F1: 8.41770341591, EM: 5.0, for 100 samples
 F1: 4.17428094711, EM: 1.0, for 100 samples
 F1: 8.4587930022, EM: 4.0, for 100 samples
 F1: 6.3542468624, EM: 3.0, for 100 samples
+Created model with fresh parameters.
+Num params: 924200
+Number of params: 924200 (retreival took 1.530451 secs)
+F1: 5.58950899634, EM: 0.0, for 100 samples
+F1: 7.92243147706, EM: 0.0, for 100 samples
+F1: 2.86703860632, EM: 0.0, for 100 samples
+F1: 6.3968806104, EM: 1.0, for 100 samples
+F1: 6.12646805378, EM: 4.0, for 100 samples
+F1: 5.1810017422, EM: 2.0, for 100 samples
+F1: 4.8801562657, EM: 1.0, for 100 samples
+F1: 12.7587393657, EM: 5.0, for 100 samples
+F1: 6.53319275972, EM: 1.0, for 100 samples
+F1: 15.0343263739, EM: 8.0, for 100 samples
+F1: 4.64235792837, EM: 0.0, for 100 samples
+F1: 19.4751130131, EM: 12.0, for 100 samples
+F1: 5.23943212498, EM: 0.0, for 100 samples
+F1: 40.4809859552, EM: 34.0, for 100 samples
+F1: 5.41778792295, EM: 0.0, for 100 samples
+F1: 60.8350913058, EM: 55.0, for 100 samples
+F1: 6.25381501178, EM: 0.0, for 100 samples
+F1: 74.6938225834, EM: 70.0, for 100 samples
+F1: 5.69164924482, EM: 1.0, for 100 samples
+F1: 93.5024980312, EM: 91.0, for 100 samples
+Reading model parameters from /tmp/cs224n-squad-train/model_params-9
+Reading model parameters from /tmp/cs224n-squad-train/model_params-9
+Number of params: 924200 (retreival took 1.598554 secs)
+Reading model parameters from /tmp/cs224n-squad-train/model_params-9
+Number of params: 924200 (retreival took 1.193278 secs)
+F1: 92.7759173293, EM: 91.0, for 100 samples
+F1: 5.41358936121, EM: 0.0, for 100 samples
+F1: 97.9831932773, EM: 97.0, for 100 samples
+F1: 7.27491815886, EM: 2.0, for 100 samples
+F1: 99.2105263158, EM: 99.0, for 100 samples
+F1: 5.35576661875, EM: 0.0, for 100 samples
+F1: 98.2857142857, EM: 98.0, for 100 samples
+F1: 4.93745856307, EM: 0.0, for 100 samples
+Created model with fresh parameters.
+Num params: 924200
+Number of params: 924200 (retreival took 1.893070 secs)
+Created model with fresh parameters.
+Num params: 924200
+Number of params: 924200 (retreival took 1.730362 secs)
+Reading model parameters from /tmp/cs224n-squad-train/model_params-0
+Number of params: 924200 (retreival took 1.668113 secs)
+F1: 9.27172752781, EM: 5.0, for 100 samples
+F1: 3.26602716018, EM: 1.0, for 100 samples
+F1: 12.7690215333, EM: 7.0, for 100 samples
+F1: 3.10100070735, EM: 1.0, for 100 samples
+Reading model parameters from /tmp/cs224n-squad-train/model_params-2
+Number of params: 924200 (retreival took 1.677090 secs)
+Reading model parameters from /tmp/cs224n-squad-train/model_params-2
+Number of params: 924200 (retreival took 1.359448 secs)
+Reading model parameters from /tmp/cs224n-squad-train/model_params-2
+Number of params: 924200 (retreival took 1.835615 secs)
+Reading model parameters from /tmp/cs224n-squad-train/model_params-2
+Number of params: 924200 (retreival took 1.880562 secs)
+Reading model parameters from /tmp/cs224n-squad-train/model_params-2
+Number of params: 924200 (retreival took 1.804441 secs)
+Reading model parameters from /tmp/cs224n-squad-train/model_params-2
+Number of params: 924200 (retreival took 1.842387 secs)
+Reading model parameters from /tmp/cs224n-squad-train/model_params-2
+Number of params: 924200 (retreival took 1.805412 secs)
+F1: 24.3581224662, EM: 18.0, for 100 samples
+F1: 6.32218212795, EM: 2.0, for 100 samples
+F1: 44.5205106349, EM: 38.0, for 100 samples
+F1: 1.79518663415, EM: 0.0, for 100 samples
+F1: 50.2886608517, EM: 44.0, for 100 samples
+F1: 4.56169343005, EM: 0.0, for 100 samples
+F1: 73.6395275247, EM: 68.0, for 100 samples
+F1: 5.25939101436, EM: 1.0, for 100 samples
+F1: 86.8681531065, EM: 83.0, for 100 samples
+F1: 5.83062037908, EM: 1.0, for 100 samples
+F1: 89.8583804661, EM: 87.0, for 100 samples
+F1: 5.31212870803, EM: 0.0, for 100 samples
+F1: 90.2730943719, EM: 88.0, for 100 samples
+F1: 6.02851929106, EM: 2.0, for 100 samples
+F1: 96.2765362187, EM: 93.0, for 100 samples
+F1: 7.68775534783, EM: 3.0, for 100 samples
+F1: 99.0, EM: 99.0, for 100 samples
+F1: 6.16689050679, EM: 2.0, for 100 samples
+F1: 100.0, EM: 100.0, for 100 samples
+F1: 3.91299794721, EM: 1.0, for 100 samples

@@ -1,0 +1,6 @@
+model_checkpoint_path: "/tmp/cs224n-squad-train/model_params-9"
+all_model_checkpoint_paths: "/tmp/cs224n-squad-train/model_params-5"
+all_model_checkpoint_paths: "/tmp/cs224n-squad-train/model_params-6"
+all_model_checkpoint_paths: "/tmp/cs224n-squad-train/model_params-7"
+all_model_checkpoint_paths: "/tmp/cs224n-squad-train/model_params-8"
+all_model_checkpoint_paths: "/tmp/cs224n-squad-train/model_params-9"
