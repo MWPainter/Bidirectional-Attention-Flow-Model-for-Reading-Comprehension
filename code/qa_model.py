@@ -29,10 +29,12 @@ def get_optimizer(opt):
 
 
 class Encoder(object):
-    def __init__(self, state_size, embedding_dim):
+    def __init__(self, state_size, embedding_dim, dropout_prob, layers):
         self.state_size = state_size
         self.embedding_dim = embedding_dim # the dimension of the word embeddings
+        self.dropout_prob = tf.constant(dropout)
         self.cell = tf.nn.rnn_cell.BasicLSTMCell(self.state_size)
+        self.layers = layers # number of layers for a deep BiLSTM encoder, for both
         
     def encode(self, question, question_mask, context_paragraph, context_mask):
         """
@@ -60,7 +62,7 @@ class Encoder(object):
         """
 
         # Build a BiLSTM layer for the question (we only want the concatinated end vectors here)
-        question_vector, _ = self.build_rnn(question, question_mask, scope="question_BiLSTM", reuse=True)
+        question_vector, _ = self.build_deep_rnn(question, question_mask, scope="question_BiLSTM", reuse=True)
 
         # Concatanate the question vector to every word in the context paragraph, by tiling the question vector and concatinating
         question_vector_tiled = tf.expand_dims(question_vector, 1)
@@ -68,7 +70,7 @@ class Encoder(object):
         context_input = tf.concat(2, [context_paragraph, question_vector_tiled])
 
         # Build BiLSTM layer for the context (want all output states here)
-        _, context_states = self.build_rnn(context_input, context_mask, scope="context_BiLSTM", reuse=True)
+        _, context_states = self.build_deep_rnn(context_input, context_mask, scope="context_BiLSTM", reuse=True)
 
         # Create a 'context' vector from attention
         attention_context_vector = self.create_attention_context_vector(context_states, question_vector, scope="AttentionVector", reuse=True)
@@ -78,7 +80,7 @@ class Encoder(object):
 
 
 
-    def build_rnn(self, inpt, mask, scope="default scope", reuse=False):
+    def build_rnn(self, inpt, mask, scope="default_scope", reuse=False):
         """
         Helper function to build a rolled out rnn. We need the mask to tell tf how far to roll out the network
         
@@ -88,7 +90,7 @@ class Encoder(object):
             Dims: [batch_size, input_sequence_length]
         :param scope: the variable scope to use
         :param reuse: boolean if we should reuse parameters in each cell in the rolled out network (i.e. is it theoretically the "same cell" or different?)
-        :return: (concat(fw_final_state, bw_final_state), concat(fw_all_states, bw_all_states)), 
+        :return: (fw_final_state, bw_final_state), concat(fw_all_states, bw_all_states)), 
                 final_state is the final states of (RELEVANT part) of the states
                 dim = [batch_size, cell_size] (cell_size = hidden state size of the lstm)
                 so dim of concatinated state is [batch_size, 2*cell_size]
@@ -105,9 +107,32 @@ class Encoder(object):
             (fw_outputs, bw_outputs), _ = tf.nn.bidirectional_dynamic_rnn(self.cell, self.cell, inpt, sequence_length=input_length, dtype=tf.float32, time_major=False) 
             fw_final_state = fw_outputs[:,-1,:]
             bw_final_state = bw_outputs[:,0,:]
-            representation = tf.concat(1, [fw_final_state, bw_final_state])
             state_history = tf.concat(2, [fw_outputs, bw_outputs])
-            return (representation, state_history)
+            return ((fw_final_state, bw_final_state), state_history)
+
+
+    
+    def build_deep_rnn(self, inpt, mask, scope="default_scope", reuse=False):
+        """
+        Use build_rnn to build a rolled out RNN, using the cell of type self.cell
+        We will make this 'self.layers' layers deep
+        See deep_rnn for description of the inputs
+        We feed the output history (concatination of the forward and backward history) into the next layer each time
+        Returns the the history of states for the TOPMOST layer of BiLSTM's and all of the final states concatinated together as a single vector representation
+        So if the forward final states are f1, ..., fn and backward are b1, ..., bn if there are n layers, then the single vector representation is
+        [f1; ...; fn; b1; ...; bn]
+        """
+        with vs.variable_scope(scope, reuse):
+            fw_final_states = []
+            bw_final_states = []
+            states = inpt
+            for i in range(self.layers):
+                scope = "rnn_layer_" + str(i)
+                (fw_final_state_i, bw_final_state_i), states = self.build_rnn(states, mask, scope=scope, reuse=True)
+                fw_final_states.append(fw_final_state_i)
+                bw_final_states.append(bw_final_state_i)
+            final_representation = tf.concat(1, fw_final_states + bw_final_states)
+            return final_representation, states
 
 
 
@@ -138,6 +163,10 @@ class Encoder(object):
             cur_state_tiled = tf.tile(cur_state_tiled, tf.pack([1, seq_len, 1])) # dim = [batch_size, seq_len, statesize]
             cur_state_tiled = tf.expand_dims(cur_state_tiled, 3) # dim = [batch_size, seq_len, state_size, 1]
             rnn_state_expanded = tf.expand_dims(rnn_states, 2) # dim = [batch_size, seq_len, 1, state_size]
+
+            # Apply dropout to the inner product
+            cur_state_tiled = tf.nn.dropout(cur_state_tiled, self.dropout_prob)
+            rnn_state_expanded = tf.nn.dropout(rnn_state_expanded, self.dropout_prob)
             
             # Matrix product. Each input is a rank 4 tensor. For each index in batch_size, seq_len, we comupute an quadratic form. [1, state_size] * [state_size, state_size] * [state_size, 1]
             attention_scores = tf.matmul(tf.matmul(rnn_state_expanded, inner_product_matrix_tiled), cur_state_tiled) # dim = [batch_size, seq_len, 1, 1]
@@ -154,42 +183,63 @@ class Encoder(object):
 
 
 class Decoder(object):
-    def __init__(self, output_size):
-        self.output_size = output_size
+    def __init__(self, state_size, dropout_prob, layers):
+        self.state_size = state_size
+        self.cell = tf.nn.rnn_cell.BasicLSTMCell(self.state_size)
+        self.dropout_prob = tf.constant(dropout_prob)
+        self.layers = layers # number of layers for a deep LSTM decoder
         self.FLAGS = tf.app.flags.FLAGS # Get a link to tf.app.flags  
 
     def decode(self, attention_ctx_vector, context_par_vectors):
         """
-        takes in a knowledge representation
-        and output a probability estimation over
-        all paragraph tokens on which token should be
-        the start of the answer span, and which should be
-        the end of the answer span.
-
-        :param knowledge_rep: it is a representation of the paragraph and question,
-                              decided by how you choose to implement the encoder
-        :return:
-        """
-
-
-        # Bardia's work:
+        Takes the encoder output, which is the whole replac of states for the context BiLSTM and 
+        an attention vector, computed from the question representation and uses this to feed a LSTM for decoding
         
-        cell = tf.nn.rnn_cell.LSTMCell(self.FLAGS.state_size)
+        The decoder concatinates the attention vector to the end of each of the states from the encoder, and feeds 
+        this into an LSTM. THe outputs from the LSTM are used as scores (proportional to a probability distribution) 
+        for the beginning of the answer in the context paragraph.
+
+        THere is a second LSTM for the output.
+
+        The number of layers is how many LSTM's are used / how deep the network is 
+
+        :param attention_ctx_vector: the attention context vector, computed using the question representation over the output from the context states (in the encoder)
+        :param context_par_vectors: the states from the BiLSTM in the encoder from the context paragraph
+        :return: A probability distribution over the context paragraph for where the beginning and end of the answer is
+        """
         attention_ctx_vector = tf.expand_dims(attention_ctx_vector, 1)
         attention_ctx_vector_tiled = tf.tile(attention_ctx_vector, tf.pack([1, tf.shape(context_par_vectors)[1], 1]))
         rnn_input = tf.concat(2, [context_par_vectors, attention_ctx_vector_tiled])
+        
         with vs.variable_scope("answer_start"):
-            rnn_output, _ = tf.nn.dynamic_rnn(cell, rnn_input, dtype=tf.float32)
-            a_s = self.linear(rnn_output, reuse=True) 
+            rnn_output = self.build_deep_rnn(rnn_input)
+            start_scores = self.linear(rnn_output, reuse=True) 
 
         with vs.variable_scope("answer_end"):
-            rnn_output, _ = tf.nn.dynamic_rnn(cell, rnn_input, dtype=tf.float32)
-            a_e = self.linear(rnn_output, reuse=True) 
-        return a_s, a_e
+            rnn_output = self.build_deep_rnn(rnn_input)
+            end_scores = self.linear(rnn_output, reuse=True) 
+
+        return start_scores, end_scores
     
+
+
+    def build_deep_rnn(self, rnn_input):
+        """ 
+        Builds a deep rnn using dynamic_rnn layers
+        Returns the states from the FINAL layer
+        """
+        states = rnn_input
+        for i in range(self.layers):
+            scope = "rnn_layer_" + str(i)
+            with vs.variable_scope(scope, True):
+                states, _ = tf.nn.dynamic_rnn(self.cell, states, dtype=tf.float32)
+        return states           
+
+
 
     def linear(self, rnn_output, scope="default_linear", reuse=False):
         with vs.variable_scope(scope, reuse):
+            rnn_output = tf.nn.dropout(rnn_output, self.dropout_prob) # apply dropout to the beginning of the linear layer
             weights = tf.get_variable("weights", shape=(self.FLAGS.state_size, 1), dtype=tf.float32, initializer=tf.contrib.layers.xavier_initializer())
             weights_tiled = tf.expand_dims(weights, axis=0)
             weights_tiled = tf.tile(weights_tiled, tf.pack([tf.shape(rnn_output)[0], 1, 1]))
@@ -197,7 +247,7 @@ class Decoder(object):
             matmul = tf.matmul(rnn_output, weights_tiled) 
             matmul = tf.reduce_max(matmul, axis=2) # dim = [batch_size, context_len, 1] -> [batch_size, context_len]
             result = tf.add(matmul, bias)
-            return result
+        return result
 
 
     
@@ -221,13 +271,13 @@ class Decoder(object):
     
 class QASystem(object):
     # i added embeddings down here, make sure you'll change it in train.py
-    def __init__(self, encoder, decoder, embeddings, *args):
+    def __init__(self, encoder, decoder, embeddings, backpropogate_embeddings):
         """
         Initializes your System
 
         :param encoder: an encoder that you constructed in train.py
         :param decoder: a decoder that you constructed in train.py
-        :param args: pass in more arguments as needed
+        :param backpropogate_embeddings: boolean for if we want to backpropogate through the word embeddings
         """
 
         # Get a link to tf.app.flags
@@ -236,7 +286,10 @@ class QASystem(object):
         # ==== set up placeholder tokens ========
         # is this the way to do it????
         # do we need to do reshape like we did in q2_rnn
-        self.embeddings = tf.convert_to_tensor(embeddings, dtype = tf.float32, name = 'embedding')
+        if backpropogate_embeddings:
+            self.embeddings = tf.Variable(tf.convert_to_tensor(embeddings, dtype = tf.float32, name = 'embedding'))
+        else:
+            self.embeddings = tf.convert_to_tensor(embeddings, dtype = tf.float32, name = 'embedding')
         self.encoder = encoder
         self.decoder = decoder
 
@@ -252,7 +305,6 @@ class QASystem(object):
         self.context_mask = tf.sign(self.context_word_ids_placeholder, name ="context_mask")
         
         self.answer_placeholder = tf.placeholder(tf.int32, (None, 2), name="answer_placeholder")
-        self.dropout_placeholder = tf.placeholder(tf.float32, name="dropout_placeholder")
         
         # ==== assemble pieces ====
         with tf.variable_scope("qa", initializer=tf.uniform_unit_scaling_initializer(1.0)):
@@ -285,7 +337,7 @@ class QASystem(object):
         # self.a_s, self.a_e = decoder.decode(q_h, p_h)
 
         
-    def create_feed_dict(self, question_batch, context_batch, answer_start_batch = None, answer_end_batch = None, dropout = None):
+    def create_feed_dict(self, question_batch, context_batch, answer_start_batch = None, answer_end_batch = None):
         feed_dict = {}
        	list_data = type(context_batch) is list and (type(context_batch[0]) is list or type(context_batch[0]) is np.ndarray) 
 	if not list_data:
@@ -309,8 +361,6 @@ class QASystem(object):
         if answer_end_batch is not None:
             feed_dict[self.answer_end] = answer_end_batch
 
-        if dropout is not None:
-            feed_dict[self.dropout_placeholder] = dropout
         return feed_dict                
             
 
@@ -341,7 +391,7 @@ class QASystem(object):
 
 
     # check whether the for loop is necessary. feel like should work with the full batch
-    def evaluate_answer(self, session, dataset, sample=100, log=False):
+    def evaluate_answer(self, session, dataset_address, sample=100, log=False):
         """
         Evaluate the model's performance using the harmonic mean of F1 and Exact Match (EM)
         with the set of true answer labels
@@ -362,14 +412,11 @@ class QASystem(object):
         
         f1 = 0.
         em = 0.
-        indices = np.arange(len(dataset[0]))
-        np.random.shuffle(indices)
-        indices = indices[:sample]
-        
+        dataset = get_sample(dataset_address, sample):
         for i in range(sample):
-            q, p, r1, r2 = [d[indices[i]] for d in dataset]
-            answer_beg = r1[0]
-            answer_end = r2[0]
+            q, p, r1, r2 = [d[i] for d in dataset]
+            answer_beg = r1[0] # r1 is a list of 1 element
+            answer_end = r2[0] # r2 same
             answer_str_list = [str(p[i]) for i in range(answer_beg,answer_end+1)]
             true_answer = ' '.join(answer_str_list)
             prediction = self.answer(session, p, q)
@@ -410,14 +457,18 @@ class QASystem(object):
         return outputs    
 
 
-    def optimize(self, session, dataset):
+    def optimize(self, session, dataset_address):
         """
         Takes in actual data to optimize your model
         This method is equivalent to a step() function
         :return:
         """
         loss = 0.0
-        for question_batch, context_batch, answer_start_batch, answer_end_batch in get_minibatches(dataset, self.FLAGS.batch_size):
+        if self.FLAGS.debug:
+            dataset = get_sample(dataset_address)
+        else:
+            dataset = get_minibatches(dataset_address, self.FLAGS.batch_size)
+        for question_batch, context_batch, answer_start_batch, answer_end_batch in dataset:
             answer_start_batch = flatten(answer_start_batch) # batch returns dim=[batch_size,1] need dim=[batch_size,]
             answer_end_batch = flatten(answer_end_batch) # batch returns dim=[batch_size,1] need dim=[batch_size,]
             input_feed = self.create_feed_dict(question_batch, context_batch, answer_start_batch, answer_end_batch)
@@ -427,7 +478,7 @@ class QASystem(object):
 
         return loss
 
-    def train(self, session, train_dataset, val_dataset, train_dir):
+    def train(self, session, train_dataset_address, val_dataset_address, train_dir):
         """
         Implement main training loop
 
@@ -469,19 +520,19 @@ class QASystem(object):
         self.append_file_line(training_scores_filename, "Epoch", "F1_score", "EM_score", "Epoch_time")
         self.append_file_line(validation_scores_filename, "Epoch", "F1_score", "EM_score", "Epoch_time")
 
-        q_val, p_val, a_val_s, a_val_e = val_dataset
-        q, p, a_s, a_e = train_dataset 
+        #q_val, p_val, a_val_s, a_val_e = val_dataset
+        #q, p, a_s, a_e = train_dataset 
         for e in range(self.FLAGS.epochs):
             tic = time.time()
-            loss = self.optimize(session, train_dataset)
+            loss = self.optimize(session, train_dataset_address)
             toc = time.time()
             epoch_time = toc - tic
             # save your model here
             self.saver.save(session, train_dir + "/model_params", global_step=e)
-            val_loss = self.validate(session, val_dataset)
+            val_loss = self.validate(session, val_dataset_address)
 
-            f1_train, em_train = self.evaluate_answer(session, train_dataset, 100, True) # doing this cuz we wanna make sure it at least works well for the stuff it's already seen
-            f1_val, em_val = self.evaluate_answer(session, val_dataset, 100, True)
+            f1_train, em_train = self.evaluate_answer(session, train_dataset_address, 100, True) # doing this cuz we wanna make sure it at least works well for the stuff it's already seen
+            f1_val, em_val = self.evaluate_answer(session, val_dataset_address, 100, True)
             
             # Log scores
             self.append_file_line(training_scores_filename, e, f1_train, em_train, epoch_time)
@@ -499,7 +550,7 @@ class QASystem(object):
 
     # the following function is called from train above and only calls the function test below
 
-    def validate(self, sess, valid_dataset): # only used for unseen examples, ie when you wanna check your model
+    def validate(self, sess, valid_dataset_address): # only used for unseen examples, ie when you wanna check your model
         """
         Iterate through the validation dataset and determine what
         the validation cost is.
@@ -512,7 +563,11 @@ class QASystem(object):
         :return:
         """
         valid_cost = 0.
-        for question_batch, context_batch, answer_start_batch, answer_end_batch in get_minibatches(valid_dataset, self.FLAGS.batch_size):
+        if self.FLAGS.debug:
+            dataset = get_sample(valid_dataset_address)
+        else:
+            dataset = get_minibatches(valid_dataset_address, self.FLAGS.batch_size)
+        for question_batch, context_batch, answer_start_batch, answer_end_batch in dataset:
             valid_cost += self.test(sess, question_batch, context_batch, answer_start_batch, answer_end_batch)
 
         return valid_cost

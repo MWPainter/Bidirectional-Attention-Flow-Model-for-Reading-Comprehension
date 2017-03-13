@@ -26,7 +26,7 @@ tf.app.flags.DEFINE_integer("embedding_size", 100, "Size of the pretrained vocab
 tf.app.flags.DEFINE_integer("question_max_length", 100, "Maximum length of an input question.")
 tf.app.flags.DEFINE_integer("context_paragraph_max_length", 800, "Maximum length of a context paragraph.")
 tf.app.flags.DEFINE_string("data_dir", "data/squad", "SQuAD directory (default ./data/squad)")
-tf.app.flags.DEFINE_string("train_dir", "train/model1", "Training directory to save the model parameters (default: ./train).")
+tf.app.flags.DEFINE_string("train_dir", "train", "Training directory to save the model parameters (default: ./train), it will use the model name as a second directory.")
 tf.app.flags.DEFINE_string("load_train_dir", "", "Training directory to load model parameters from to resume training (default: {train_dir}).")
 tf.app.flags.DEFINE_string("log_dir", "log", "Path to store log and flag files (default: ./log)")
 tf.app.flags.DEFINE_string("optimizer", "adam", "adam / sgd")
@@ -36,6 +36,8 @@ tf.app.flags.DEFINE_string("vocab_path", "data/squad/vocab.dat", "Path to vocab 
 tf.app.flags.DEFINE_string("embed_path", "", "Path to the trimmed GLoVe embedding (default: ./data/squad/glove.trimmed.{embedding_size}.npz)")
 tf.app.flags.DEFINE_boolean("debug", True, "Are we debugging?")
 tf.app.flags.DEFINE_integer("debug_training_size", 500, "A smaller training size for debugging, so that epochs are quick, and we can test logging etc")
+tf.app.flags.DEFINE_boolean("log_score", True, "If we want to log f1 and em score in a txt file, alongside the model params in the pa4/train/<model_name> directory")
+tf.app.flags.DEFINE_string("model_name", "baseline", "The model to use, pick from: 'baseline', 'embedding_backprop', 'deep_encoder_2layer', 'deep_encoder_3layer', 'deep_decoder_2layer', 'QRNNs'")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -79,47 +81,39 @@ def get_normalized_train_dir(train_dir):
         os.makedirs(train_dir)
     os.symlink(os.path.abspath(train_dir), global_train_dir)
     return global_train_dir
-
-def load_dataset(data_dir, train_val):
-    """
-    Loads the training data from the data directory
-    A question is a list of indices into the embeddings matrix
-    A context paragraph is a list of indices into the embeddings matrix
-    An answer is a pair of indices into the context paragraph
-    The training dataset contains a list of (question, context, answer) tuples
-    """
-    questions = []
-    with open(data_dir + "/" + train_val + ".ids.question") as question_id_file:
-        for line in question_id_file:
-            question = map(int, line.split(" ")) # map applies int(_) to all the strings to convert
-            questions.append(question)
-    
-    contexts = []
-    with open(data_dir + "/" + train_val + ".ids.context") as context_id_file:
-        for line in context_id_file:
-            context = map(int, line.split(" "))
-            contexts.append(context)
-
-    start_answers = []
-    end_answers = []
-    with open(data_dir + "/" + train_val + ".span") as answers_file: # span file contains the indices of the answers into the context paragraph
-        for line in answers_file:
-            answer = map(int, line.split(" "))
-            start_answers.append([answer[0]])
-            end_answers.append([answer[1]])
-    
-    # if we are debugging, we only want to return the first 200 or so examples from the training set
-    training_set = [questions, contexts, start_answers, end_answers]
-    if (FLAGS.debug):
-        training_set = [s[:FLAGS.debug_training_size] for s in training_set]
-    return training_set
             
 
 def main(_):
 
+    # Work out flags that decide the architecture we're doing to use (defaults for the baseline)
+    backprop_word_embeddings = False
+    encoder_layers = 1
+    decoder_layers = 1
+
+    if FLAGS.model_name == "embedding_backprop":
+        backprop_word_embeddings = True
+    elif FLAGS.model_name == "deep_encoder_2layer":
+        backprop_word_embeddings = True # false if that did better
+        encoder_layers = 2
+    elif FLAGS.model_name == "deep_encoder_3layer":
+        backprop_word_embeddings = True # false if that did better
+        encoder_layers = 3
+    elif FLAGS.model_name == "deep_decoder_2layer":
+        backprop_word_embeddings = True # false if that did better
+        encoder_layers = 3 # 1, 2 if one of them did better 
+        decoder_layer = 2
+    elif FLAGS.model_name == "deep_decoder_3layer":
+        backprop_word_embeddings = True # false if that did better
+        encoder_layers = 3 # 1, 2 if one of them did better
+        decoder_layers = 3 
+    elif not (FLAGS.model_name == "baseline"): 
+        raise Exception("Invalid model name selected")
+
     # Do what you need to load datasets from FLAGS.data_dir
-    train_dataset = load_dataset(FLAGS.data_dir, "train")
-    val_dataset = load_dataset(FLAGS.data_dir, "val")
+    #train_dataset = load_dataset(FLAGS.data_dir, "train")
+    #val_dataset = load_dataset(FLAGS.data_dir, "val")
+    train_dataset_address = FLAGS.data_dir + "/train"
+    val_dataset_address = FLAGS.data_dir + "/val"
     
     embed_path = FLAGS.embed_path or pjoin("data", "squad", "glove.trimmed.{}.npz".format(FLAGS.embedding_size))
     vocab_path = FLAGS.vocab_path or pjoin(FLAGS.data_dir, "vocab.dat")
@@ -128,10 +122,10 @@ def main(_):
     # load in the embeddings
     embeddings = np.load(embed_path)['glove']
 
-    encoder = Encoder(state_size=FLAGS.state_size, embedding_dim=FLAGS.embedding_size)
-    decoder = Decoder(output_size=FLAGS.output_size)
+    encoder = Encoder(FLAGS.state_size, FLAGS.embedding_size, FLAGS.dropout, encoder_layers)
+    decoder = Decoder(FLAGS.state_size, FLAGS.dropout, decoder_layers)
 
-    qa = QASystem(encoder, decoder, embeddings)
+    qa = QASystem(encoder, decoder, embeddings, backprop_word_embeddings)
 
     if not os.path.exists(FLAGS.log_dir):
         os.makedirs(FLAGS.log_dir)
@@ -144,13 +138,14 @@ def main(_):
 
     with tf.Session() as sess:
         load_train_dir = get_normalized_train_dir(FLAGS.load_train_dir or FLAGS.train_dir)
+        load_train_dir += FLAGS.model_name # each model gets its own subdirectory
         initialize_model(sess, qa, load_train_dir)
 
         save_train_dir = get_normalized_train_dir(FLAGS.train_dir)
         if not os.path.exists(save_train_dir):
             os.makedirs(save_train_dir)
         create_train_dir = (save_train_dir)
-        qa.train(sess, train_dataset, val_dataset, save_train_dir)
+        qa.train(sess, train_dataset_address, val_dataset_address, save_train_dir)
 
 
 if __name__ == "__main__":
