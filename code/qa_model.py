@@ -33,7 +33,7 @@ class Encoder(object):
         self.state_size = state_size
         self.embedding_dim = embedding_dim # the dimension of the word embeddings
         self.cell = tf.nn.rnn_cell.BasicLSTMCell(self.state_size)
-        self.layer = layers # number of layers for a deep BiLSTM encoder
+        self.layer = layers # number of layers for a deep BiLSTM encoder, for both
         
     def encode(self, question, question_mask, context_paragraph, context_mask):
         """
@@ -61,7 +61,7 @@ class Encoder(object):
         """
 
         # Build a BiLSTM layer for the question (we only want the concatinated end vectors here)
-        question_vector, _ = self.build_rnn(question, question_mask, scope="question_BiLSTM", reuse=True)
+        question_vector, _ = self.build_deep_rnn(question, question_mask, scope="question_BiLSTM", reuse=True)
 
         # Concatanate the question vector to every word in the context paragraph, by tiling the question vector and concatinating
         question_vector_tiled = tf.expand_dims(question_vector, 1)
@@ -69,7 +69,7 @@ class Encoder(object):
         context_input = tf.concat(2, [context_paragraph, question_vector_tiled])
 
         # Build BiLSTM layer for the context (want all output states here)
-        _, context_states = self.build_rnn(context_input, context_mask, scope="context_BiLSTM", reuse=True)
+        _, context_states = self.build_deep_rnn(context_input, context_mask, scope="context_BiLSTM", reuse=True)
 
         # Create a 'context' vector from attention
         attention_context_vector = self.create_attention_context_vector(context_states, question_vector, scope="AttentionVector", reuse=True)
@@ -79,7 +79,7 @@ class Encoder(object):
 
 
 
-    def build_rnn(self, inpt, mask, scope="default scope", reuse=False):
+    def build_rnn(self, inpt, mask, scope="default_scope", reuse=False):
         """
         Helper function to build a rolled out rnn. We need the mask to tell tf how far to roll out the network
         
@@ -89,7 +89,7 @@ class Encoder(object):
             Dims: [batch_size, input_sequence_length]
         :param scope: the variable scope to use
         :param reuse: boolean if we should reuse parameters in each cell in the rolled out network (i.e. is it theoretically the "same cell" or different?)
-        :return: (concat(fw_final_state, bw_final_state), concat(fw_all_states, bw_all_states)), 
+        :return: (fw_final_state, bw_final_state), concat(fw_all_states, bw_all_states)), 
                 final_state is the final states of (RELEVANT part) of the states
                 dim = [batch_size, cell_size] (cell_size = hidden state size of the lstm)
                 so dim of concatinated state is [batch_size, 2*cell_size]
@@ -106,9 +106,32 @@ class Encoder(object):
             (fw_outputs, bw_outputs), _ = tf.nn.bidirectional_dynamic_rnn(self.cell, self.cell, inpt, sequence_length=input_length, dtype=tf.float32, time_major=False) 
             fw_final_state = fw_outputs[:,-1,:]
             bw_final_state = bw_outputs[:,0,:]
-            representation = tf.concat(1, [fw_final_state, bw_final_state])
             state_history = tf.concat(2, [fw_outputs, bw_outputs])
-            return (representation, state_history)
+            return ((fw_final_state, bw_final_state), state_history)
+
+
+    
+    def build_deep_rnn(self, inpt, mask, scope="default_scope", reuse=False):
+        """
+        Use build_rnn to build a rolled out RNN, using the cell of type self.cell
+        We will make this 'self.layers' layers deep
+        See deep_rnn for description of the inputs
+        We feed the output history (concatination of the forward and backward history) into the next layer each time
+        Returns the the history of states for the TOPMOST layer of BiLSTM's and all of the final states concatinated together as a single vector representation
+        So if the forward final states are f1, ..., fn and backward are b1, ..., bn if there are n layers, then the single vector representation is
+        [f1; ...; fn; b1; ...; bn]
+        """
+        with vs.variable_scope(scope, reuse):
+            fw_final_states = []
+            bw_final_states = []
+            states = inpt
+            for i in range(self.layers):
+                scope = "rnn_layer_" + str(i)
+                (fw_final_state_i, bw_final_state_i), states = self.build_rnn(states, mask, scope=scope, reuse=True)
+                fw_final_states.append(fw_final_state_1)
+                bw_final_states.append(bw_final_state_1)
+            final_representation = tf.concat(1, fw_final_states + bw_final_states)
+            return final_representation, states
 
 
 
@@ -155,41 +178,56 @@ class Encoder(object):
 
 
 class Decoder(object):
-    def __init__(self, output_size, layers):
-        self.output_size = output_size
-        self.FLAGS = tf.app.flags.FLAGS # Get a link to tf.app.flags  
+    def __init__(self, state_size, layers):
+        self.state_size = state_size
+        self.cell = tf.nn.rnn_cell.BasicLSTMCell(self.state_size)
         self.layers = layers # number of layers for a deep LSTM decoder
+        self.FLAGS = tf.app.flags.FLAGS # Get a link to tf.app.flags  
 
     def decode(self, attention_ctx_vector, context_par_vectors):
         """
         Takes the encoder output, which is the whole replac of states for the context BiLSTM and 
-        an attention vector, computed from the question representation and the 
+        an attention vector, computed from the question representation and uses this to feed a LSTM for decoding
+        
+        The decoder concatinates the attention vector to the end of each of the states from the encoder, and feeds 
+        this into an LSTM. THe outputs from the LSTM are used as scores (proportional to a probability distribution) 
+        for the beginning of the answer in the context paragraph.
 
-        takes in a knowledge representation
-        and output a probability estimation over
-        all paragraph tokens on which token should be
-        the start of the answer span, and which should be
-        the end of the answer span.
+        THere is a second LSTM for the output.
 
-        :param knowledge_rep: it is a representation of the paragraph and question,
-                              decided by how you choose to implement the encoder
-        :return:
+        The number of layers is how many LSTM's are used / how deep the network is 
+
+        :param attention_ctx_vector: the attention context vector, computed using the question representation over the output from the context states (in the encoder)
+        :param context_par_vectors: the states from the BiLSTM in the encoder from the context paragraph
+        :return: A probability distribution over the context paragraph for where the beginning and end of the answer is
         """
-        cell = tf.nn.rnn_cell.LSTMCell(self.FLAGS.state_size)
         attention_ctx_vector = tf.expand_dims(attention_ctx_vector, 1)
         attention_ctx_vector_tiled = tf.tile(attention_ctx_vector, tf.pack([1, tf.shape(context_par_vectors)[1], 1]))
         rnn_input = tf.concat(2, [context_par_vectors, attention_ctx_vector_tiled])
         
         with vs.variable_scope("answer_start"):
-            rnn_output, _ = tf.nn.dynamic_rnn(cell, rnn_input, dtype=tf.float32)
-            a_s = self.linear(rnn_output, reuse=True) 
+            rnn_output, _ = self.build_deep_rnn(rnn_input)
+            start_scores = self.linear(rnn_output, reuse=True) 
 
         with vs.variable_scope("answer_end"):
-            rnn_output, _ = tf.nn.dynamic_rnn(cell, rnn_input, dtype=tf.float32)
-            a_e = self.linear(rnn_output, reuse=True) 
+            rnn_output, _ = self.build_deep_rnn(rnn_input)
+            end_scores = self.linear(rnn_output, reuse=True) 
 
-        return a_s, a_e
+        return start_scores, end_scores
     
+
+
+    def build_deep_rnn(rnn_input):
+        """ 
+        Builds a deep rnn using dynamic_rnn layers
+        Returns the states from the FINAL layer
+        """
+        states = rnn_input
+        for i in range(self.layers):
+            scope = "rnn_layer_" + str(i)
+            with vs.variable_scope(scope, reuse=True):
+                states, _ = tf.nn.dynmaic_rnn(self.cell, states, dtype=tf.float32)
+        return states           
 
 
 
@@ -241,7 +279,10 @@ class QASystem(object):
         # ==== set up placeholder tokens ========
         # is this the way to do it????
         # do we need to do reshape like we did in q2_rnn
-        self.embeddings = tf.convert_to_tensor(embeddings, dtype = tf.float32, name = 'embedding')
+        if backpropogate_embeddings:
+            self.embeddings = tf.Variable(tf.convert_to_tensor(embeddings, dtype = tf.float32, name = 'embedding'))
+        else:
+            self.embeddings = tf.convert_to_tensor(embeddings, dtype = tf.float32, name = 'embedding')
         self.encoder = encoder
         self.decoder = decoder
 

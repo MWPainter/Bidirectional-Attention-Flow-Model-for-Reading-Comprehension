@@ -120,24 +120,24 @@ def load_dataset(data_dir, train_val):
 def main(_):
 
     # Work out flags that decide the architecture we're doing to use (defaults for the baseline)
-    word_embedding_backprop = False
+    backprop_word_embeddings = False
     encoder_layers = 1
     decoder_layers = 1
 
     if FLAGS.model_name == "embedding_backprop":
-        word_embedding_backprop = True
+        backprop_word_embeddings = True
     elif FLAGS.model_name == "deep_encoder_2layer":
-        word_embedding_backprop = True # false if that did better
+        backprop_word_embeddings = True # false if that did better
         encoder_layers = 2
     elif FLAGS.model_name == "deep_encoder_3layer":
-        word_embedding_backprop = True # false if that did better
+        backprop_word_embeddings = True # false if that did better
         encoder_layers = 3
     elif FLAGS.model_name == "deep_decoder_2layer":
-        word_embedding_backprop = True # false if that did better
+        backprop_word_embeddings = True # false if that did better
         encoder_layers = 3 # 1, 2 if one of them did better 
         decoder_layer = 2
     elif FLAGS.model_name == "deep_decoder_3layer":
-        word_embedding_backprop = True # false if that did better
+        backprop_word_embeddings = True # false if that did better
         encoder_layers = 3 # 1, 2 if one of them did better
         decoder_layers = 3 
     else 
@@ -154,10 +154,10 @@ def main(_):
     # load in the embeddings
     embeddings = np.load(embed_path)['glove']
 
-    encoder = Encoder(state_size=FLAGS.state_size, embedding_dim=FLAGS.embedding_size)
-    decoder = Decoder(output_size=FLAGS.output_size)
+    encoder = Encoder(state_size=FLAGS.state_size, embedding_dim=FLAGS.embedding_size, encoder_layers)
+    decoder = Decoder(output_size=FLAGS.state_size, decoder_layers)
 
-    qa = QASystem(encoder, decoder, embeddings)
+    qa = QASystem(encoder, decoder, embeddings, backprop_word_embeddings)
 
     if not os.path.exists(FLAGS.log_dir):
         os.makedirs(FLAGS.log_dir)
