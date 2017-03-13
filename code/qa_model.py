@@ -29,10 +29,11 @@ def get_optimizer(opt):
 
 
 class Encoder(object):
-    def __init__(self, state_size, embedding_dim):
+    def __init__(self, state_size, embedding_dim, layers):
         self.state_size = state_size
         self.embedding_dim = embedding_dim # the dimension of the word embeddings
         self.cell = tf.nn.rnn_cell.BasicLSTMCell(self.state_size)
+        self.layer = layers # number of layers for a deep BiLSTM encoder
         
     def encode(self, question, question_mask, context_paragraph, context_mask):
         """
@@ -154,12 +155,16 @@ class Encoder(object):
 
 
 class Decoder(object):
-    def __init__(self, output_size):
+    def __init__(self, output_size, layers):
         self.output_size = output_size
         self.FLAGS = tf.app.flags.FLAGS # Get a link to tf.app.flags  
+        self.layers = layers # number of layers for a deep LSTM decoder
 
     def decode(self, attention_ctx_vector, context_par_vectors):
         """
+        Takes the encoder output, which is the whole replac of states for the context BiLSTM and 
+        an attention vector, computed from the question representation and the 
+
         takes in a knowledge representation
         and output a probability estimation over
         all paragraph tokens on which token should be
@@ -170,14 +175,11 @@ class Decoder(object):
                               decided by how you choose to implement the encoder
         :return:
         """
-
-
-        # Bardia's work:
-        
         cell = tf.nn.rnn_cell.LSTMCell(self.FLAGS.state_size)
         attention_ctx_vector = tf.expand_dims(attention_ctx_vector, 1)
         attention_ctx_vector_tiled = tf.tile(attention_ctx_vector, tf.pack([1, tf.shape(context_par_vectors)[1], 1]))
         rnn_input = tf.concat(2, [context_par_vectors, attention_ctx_vector_tiled])
+        
         with vs.variable_scope("answer_start"):
             rnn_output, _ = tf.nn.dynamic_rnn(cell, rnn_input, dtype=tf.float32)
             a_s = self.linear(rnn_output, reuse=True) 
@@ -185,8 +187,11 @@ class Decoder(object):
         with vs.variable_scope("answer_end"):
             rnn_output, _ = tf.nn.dynamic_rnn(cell, rnn_input, dtype=tf.float32)
             a_e = self.linear(rnn_output, reuse=True) 
+
         return a_s, a_e
     
+
+
 
     def linear(self, rnn_output, scope="default_linear", reuse=False):
         with vs.variable_scope(scope, reuse):
@@ -221,13 +226,13 @@ class Decoder(object):
     
 class QASystem(object):
     # i added embeddings down here, make sure you'll change it in train.py
-    def __init__(self, encoder, decoder, embeddings, *args):
+    def __init__(self, encoder, decoder, embeddings, backpropogate_embeddings):
         """
         Initializes your System
 
         :param encoder: an encoder that you constructed in train.py
         :param decoder: a decoder that you constructed in train.py
-        :param args: pass in more arguments as needed
+        :param backpropogate_embeddings: boolean for if we want to backpropogate through the word embeddings
         """
 
         # Get a link to tf.app.flags
