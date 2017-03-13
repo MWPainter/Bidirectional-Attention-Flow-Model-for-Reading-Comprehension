@@ -370,8 +370,6 @@ class QASystem(object):
             prediction = ' '.join([str(p[i]) for i in range(prediction[0], prediction[1]+1)])
             f1 += f1_score(prediction, true_answer)
             em += exact_match_score(prediction, true_answer)
-	print("Ma f1 score: {}" % f1)
-	print("Ma em score: {}" % em)
         if log:
             logging.info("F1: {}, EM: {}, for {} samples".format(f1, em, sample))
 
@@ -486,7 +484,7 @@ class QASystem(object):
 
         :return:
         """
-	valid_cost = 0.
+	    valid_cost = 0.
         for question_batch, context_batch, answer_start_batch, answer_end_batch in get_minibatches(valid_dataset, self.FLAGS.batch_size):
             valid_cost += self.test(sess, question_batch, context_batch, answer_start_batch, answer_end_batch)
 
