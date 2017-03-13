@@ -9,7 +9,7 @@ import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 from tensorflow.python.ops import variable_scope as vs
-from util import get_minibatches, flatten
+from util import get_sample, get_minibatches, flatten
 from evaluate import exact_match_score, f1_score
 
 logging.basicConfig(level=logging.INFO)
@@ -32,7 +32,7 @@ class Encoder(object):
     def __init__(self, state_size, embedding_dim, dropout_prob, layers):
         self.state_size = state_size
         self.embedding_dim = embedding_dim # the dimension of the word embeddings
-        self.dropout_prob = tf.constant(dropout)
+        self.dropout_prob = tf.constant(dropout_prob)
         self.cell = tf.nn.rnn_cell.BasicLSTMCell(self.state_size)
         self.layers = layers # number of layers for a deep BiLSTM encoder, for both
         
@@ -412,7 +412,7 @@ class QASystem(object):
         
         f1 = 0.
         em = 0.
-        dataset = get_sample(dataset_address, sample):
+        dataset = get_sample(dataset_address, sample)
         for i in range(sample):
             q, p, r1, r2 = [d[i] for d in dataset]
             answer_beg = r1[0] # r1 is a list of 1 element
@@ -465,7 +465,7 @@ class QASystem(object):
         """
         loss = 0.0
         if self.FLAGS.debug:
-            dataset = get_sample(dataset_address)
+            dataset = [get_sample(dataset_address)] # put in a list, becuase get_sample returns one minibatch and we want a list of minibatches
         else:
             dataset = get_minibatches(dataset_address, self.FLAGS.batch_size)
         for question_batch, context_batch, answer_start_batch, answer_end_batch in dataset:
@@ -564,7 +564,7 @@ class QASystem(object):
         """
         valid_cost = 0.
         if self.FLAGS.debug:
-            dataset = get_sample(valid_dataset_address)
+            dataset = [get_sample(valid_dataset_address)] # expecting a list of minibatches, but get sample returns a single minibatch
         else:
             dataset = get_minibatches(valid_dataset_address, self.FLAGS.batch_size)
         for question_batch, context_batch, answer_start_batch, answer_end_batch in dataset:

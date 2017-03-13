@@ -22,6 +22,7 @@ def flatten(llist):
 # different values from get_minibatches
 
 def get_minibatches(dataset_address, minibatch_size = 100):
+    data_size = sum(1 for line in open(dataset_address + ".span"))
     question_id_file = open(dataset_address + ".ids.question", 'r')
     context_id_file = open(dataset_address + ".ids.context", 'r')
     answer_file = open(dataset_address + ".span", 'r')
@@ -51,8 +52,9 @@ def get_minibatches(dataset_address, minibatch_size = 100):
     context_id_file.close()
     answer_file.close()
 
-def get_sample(dataset_address, sample_size):
-    
+
+
+def get_sample(dataset_address, sample_size=100): 
     data_size = sum(1 for line in open(dataset_address + ".span"))
     question_id_file = open(dataset_address + ".ids.question", 'r')
     context_id_file = open(dataset_address + ".ids.context", 'r')
@@ -63,6 +65,7 @@ def get_sample(dataset_address, sample_size):
     indices_rev = {indices[i]:i for i in range(sample_size)}
     indices.sort()
     
+    contexts = [0] * sample_size
     questions = [0] * sample_size
     start_answers = [0] * sample_size
     end_answers = [0] * sample_size
