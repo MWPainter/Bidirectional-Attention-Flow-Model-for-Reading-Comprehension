@@ -509,7 +509,7 @@ class QASystem(object):
 
         :return:
         """
-	    valid_cost = 0.
+        valid_cost = 0.
         for question_batch, context_batch, answer_start_batch, answer_end_batch in get_minibatches(valid_dataset, self.FLAGS.batch_size):
             valid_cost += self.test(sess, question_batch, context_batch, answer_start_batch, answer_end_batch)
 
