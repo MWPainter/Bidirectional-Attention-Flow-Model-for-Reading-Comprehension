@@ -408,20 +408,20 @@ class QASystem(object):
         
         f1 = 0.
         em = 0.
-        for dataset in get_minibatches(dataset_address, sample, sample = True):
-            for i in range(sample):
-                q, p, r1, r2 = [d[i] for d in dataset]
-                answer_beg = r1[0] # r1 is a list of 1 element
-                answer_end = r2[0] # r2 same
-                answer_str_list = [str(p[i]) for i in range(answer_beg,answer_end+1)]
-                true_answer = ' '.join(answer_str_list)
-                prediction = self.answer(session, p, q)
-                prediction_str_list = [str(p[i]) for i in range(prediction[0], prediction[1]+1)]
-                prediction_string = ' '.join(prediction_str_list)
-                f1 += f1_score(prediction_string, true_answer)
-                em += exact_match_score(prediction_string, true_answer)
-            if log:
-                logging.info("F1: {}, EM: {}, for {} samples".format(f1, em, sample))
+        dataset = get_sample(dataset_address, sample):
+        for i in range(sample):
+            q, p, r1, r2 = [d[i] for d in dataset]
+            answer_beg = r1[0] # r1 is a list of 1 element
+            answer_end = r2[0] # r2 same
+            answer_str_list = [str(p[i]) for i in range(answer_beg,answer_end+1)]
+            true_answer = ' '.join(answer_str_list)
+            prediction = self.answer(session, p, q)
+            prediction_str_list = [str(p[i]) for i in range(prediction[0], prediction[1]+1)]
+            prediction_string = ' '.join(prediction_str_list)
+            f1 += f1_score(prediction_string, true_answer)
+            em += exact_match_score(prediction_string, true_answer)
+        if log:
+            logging.info("F1: {}, EM: {}, for {} samples".format(f1, em, sample))
 
         return f1, em
     
@@ -460,7 +460,11 @@ class QASystem(object):
         :return:
         """
         loss = 0.0
-        for question_batch, context_batch, answer_start_batch, answer_end_batch in get_minibatches(dataset_address, self.FLAGS.batch_size, sample = self.FLAGS.debug):
+        if self.FLAGS.debug:
+            dataset = get_sample(dataset_address)
+        else:
+            dataset = get_minibatches(dataset_address, self.FLAGS.batch_size)
+        for question_batch, context_batch, answer_start_batch, answer_end_batch in dataset:
             answer_start_batch = flatten(answer_start_batch) # batch returns dim=[batch_size,1] need dim=[batch_size,]
             answer_end_batch = flatten(answer_end_batch) # batch returns dim=[batch_size,1] need dim=[batch_size,]
             input_feed = self.create_feed_dict(question_batch, context_batch, answer_start_batch, answer_end_batch)
@@ -555,7 +559,11 @@ class QASystem(object):
         :return:
         """
         valid_cost = 0.
-        for question_batch, context_batch, answer_start_batch, answer_end_batch in get_minibatches(valid_dataset_address, self.FLAGS.batch_size, sample = self.FLAGS.debug):
+        if self.FLAGS.debug:
+            dataset = get_sample(valid_dataset_address)
+        else:
+            dataset = get_minibatches(valid_dataset_address, self.FLAGS.batch_size)
+        for question_batch, context_batch, answer_start_batch, answer_end_batch in dataset:
             valid_cost += self.test(sess, question_batch, context_batch, answer_start_batch, answer_end_batch)
 
         return valid_cost
