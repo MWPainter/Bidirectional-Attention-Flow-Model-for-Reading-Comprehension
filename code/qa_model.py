@@ -365,11 +365,15 @@ class QASystem(object):
         
         for i in range(sample):
             q, p, r1, r2 = [d[indices[i]] for d in dataset]
-            true_answer = ' '.join([str(p[i]) for i in range(r1,r2+1)])
+            answer_beg = r1[0]
+            answer_end = r2[0]
+            answer_str_list = [str(p[i]) for i in range(answer_beg,answer_end+1)]
+            true_answer = ' '.join(answer_str_list)
             prediction = self.answer(session, p, q)
-            prediction = ' '.join([str(p[i]) for i in range(prediction[0], prediction[1]+1)])
-            f1 += f1_score(prediction, true_answer)
-            em += exact_match_score(prediction, true_answer)
+	        prediction_str_list = [str(p[i]) for i in range(prediction[0], prediction[1]+1)]
+            prediction_string = ' '.join(prediction_str_list)
+            f1 += f1_score(prediction_string, true_answer)
+            em += exact_match_score(prediction_string, true_answer)
         if log:
             logging.info("F1: {}, EM: {}, for {} samples".format(f1, em, sample))
 
