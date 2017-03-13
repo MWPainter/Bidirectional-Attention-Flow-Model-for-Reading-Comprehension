@@ -154,3 +154,36 @@ Number of params: 924200 (retreival took 1.034934 secs)
 Created model with fresh parameters.
 Num params: 924200
 Number of params: 924200 (retreival took 1.056799 secs)
+Created model with fresh parameters.
+Num params: 924200
+Number of params: 924200 (retreival took 1.047895 secs)
+Created model with fresh parameters.
+Num params: 924200
+Number of params: 924200 (retreival took 1.056978 secs)
+Created model with fresh parameters.
+Num params: 924200
+Number of params: 924200 (retreival took 1.162522 secs)
+Created model with fresh parameters.
+Num params: 924200
+Number of params: 924200 (retreival took 1.049803 secs)
+Created model with fresh parameters.
+Num params: 924200
+Number of params: 924200 (retreival took 1.061493 secs)
+Created model with fresh parameters.
+Num params: 924200
+Number of params: 924200 (retreival took 1.174068 secs)
+F1: 5.13664195845, EM: 0.0, for 100 samples
+F1: 5.52069136746, EM: 0.0, for 100 samples
+F1: 2.82891017715, EM: 0.0, for 100 samples
+F1: 5.70075298384, EM: 1.0, for 100 samples
+F1: 2.50362966009, EM: 0.0, for 100 samples
+F1: 4.19836822806, EM: 1.0, for 100 samples
+F1: 5.20927374366, EM: 1.0, for 100 samples
+F1: 6.05750765831, EM: 2.0, for 100 samples
+F1: 5.73395384131, EM: 2.0, for 100 samples
+F1: 7.82271070947, EM: 4.0, for 100 samples
+F1: 5.24499891443, EM: 1.0, for 100 samples
+F1: 8.41770341591, EM: 5.0, for 100 samples
+F1: 4.17428094711, EM: 1.0, for 100 samples
+F1: 8.4587930022, EM: 4.0, for 100 samples
+F1: 6.3542468624, EM: 3.0, for 100 samples

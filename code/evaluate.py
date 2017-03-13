@@ -51,7 +51,7 @@ def f1_score_ours(prediction, ground_truth):
     return f1
 
 def exact_match_score(prediction, ground_truth):
-    return 1.0 * ((prediction[0] == ground_truth[0]) and (prediction[1] == ground_truth[1]))
+    return (normalize_answer(prediction) == normalize_answer(ground_truth))
 
 
 def metric_max_over_ground_truths(metric_fn, prediction, ground_truths):
