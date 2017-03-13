@@ -387,7 +387,7 @@ class QASystem(object):
 
 
     # check whether the for loop is necessary. feel like should work with the full batch
-    def evaluate_answer(self, session, dataset, sample=100, log=False):
+    def evaluate_answer(self, session, dataset_address, sample=100, log=False):
         """
         Evaluate the model's performance using the harmonic mean of F1 and Exact Match (EM)
         with the set of true answer labels
@@ -408,9 +408,7 @@ class QASystem(object):
         
         f1 = 0.
         em = 0.
-        indices = np.arange(len(dataset[0]))
-        np.random.shuffle(indices)
-        indices = indices[:sample]
+        dataset = get_minibatches(dataset_address, sample, sample = True)
         
         for i in range(sample):
             q, p, r1, r2 = [d[indices[i]] for d in dataset]
@@ -456,14 +454,14 @@ class QASystem(object):
         return outputs    
 
 
-    def optimize(self, session, dataset):
+    def optimize(self, session, dataset_address):
         """
         Takes in actual data to optimize your model
         This method is equivalent to a step() function
         :return:
         """
         loss = 0.0
-        for question_batch, context_batch, answer_start_batch, answer_end_batch in get_minibatches(dataset, self.FLAGS.batch_size):
+        for question_batch, context_batch, answer_start_batch, answer_end_batch in get_minibatches(dataset_address, self.FLAGS.batch_size, sample = self.FLAGS.debug):
             answer_start_batch = flatten(answer_start_batch) # batch returns dim=[batch_size,1] need dim=[batch_size,]
             answer_end_batch = flatten(answer_end_batch) # batch returns dim=[batch_size,1] need dim=[batch_size,]
             input_feed = self.create_feed_dict(question_batch, context_batch, answer_start_batch, answer_end_batch)
@@ -473,7 +471,7 @@ class QASystem(object):
 
         return loss
 
-    def train(self, session, train_dataset, val_dataset, train_dir):
+    def train(self, session, train_dataset_address, val_dataset_address, train_dir):
         """
         Implement main training loop
 
@@ -515,19 +513,19 @@ class QASystem(object):
         self.append_file_line(training_scores_filename, "Epoch", "F1_score", "EM_score", "Epoch_time")
         self.append_file_line(validation_scores_filename, "Epoch", "F1_score", "EM_score", "Epoch_time")
 
-        q_val, p_val, a_val_s, a_val_e = val_dataset
-        q, p, a_s, a_e = train_dataset 
+        #q_val, p_val, a_val_s, a_val_e = val_dataset
+        #q, p, a_s, a_e = train_dataset 
         for e in range(self.FLAGS.epochs):
             tic = time.time()
-            loss = self.optimize(session, train_dataset)
+            loss = self.optimize(session, train_dataset_address)
             toc = time.time()
             epoch_time = toc - tic
             # save your model here
             self.saver.save(session, train_dir + "/model_params", global_step=e)
-            val_loss = self.validate(session, val_dataset)
+            val_loss = self.validate(session, val_dataset_address)
 
-            f1_train, em_train = self.evaluate_answer(session, train_dataset, 100, True) # doing this cuz we wanna make sure it at least works well for the stuff it's already seen
-            f1_val, em_val = self.evaluate_answer(session, val_dataset, 100, True)
+            f1_train, em_train = self.evaluate_answer(session, train_dataset_address, 100, True) # doing this cuz we wanna make sure it at least works well for the stuff it's already seen
+            f1_val, em_val = self.evaluate_answer(session, val_dataset_address, 100, True)
             
             # Log scores
             self.append_file_line(training_scores_filename, e, f1_train, em_train, epoch_time)
@@ -545,7 +543,7 @@ class QASystem(object):
 
     # the following function is called from train above and only calls the function test below
 
-    def validate(self, sess, valid_dataset): # only used for unseen examples, ie when you wanna check your model
+    def validate(self, sess, valid_dataset_address): # only used for unseen examples, ie when you wanna check your model
         """
         Iterate through the validation dataset and determine what
         the validation cost is.
@@ -558,7 +556,7 @@ class QASystem(object):
         :return:
         """
         valid_cost = 0.
-        for question_batch, context_batch, answer_start_batch, answer_end_batch in get_minibatches(valid_dataset, self.FLAGS.batch_size):
+        for question_batch, context_batch, answer_start_batch, answer_end_batch in get_minibatches(valid_dataset_address, self.FLAGS.batch_size, sample = self.FLAGS.debug):
             valid_cost += self.test(sess, question_batch, context_batch, answer_start_batch, answer_end_batch)
 
         return valid_cost

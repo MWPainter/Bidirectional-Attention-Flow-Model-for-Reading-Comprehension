@@ -16,3 +16,75 @@ def get_minibatches(data, minibatch_size, shuffle=True):
 
 def flatten(llist):
     return [item for sublist in llist for item in sublist]
+
+
+#remember to take a second look at evaluate_answer in qa_model. that function needs slightly
+# different values from get_minibatches
+
+def get_minibatches(dataset_address, minibatch_size, sample = False):
+    data_size = sum(1 for line in open(dataset_address + ".span"))
+    question_id_file = open(data_dir + "/" + train_val + ".ids.question", 'r')
+    context_id_file = open(data_dir + "/" + train_val + ".ids.context", 'r')
+    answer_file = open(data_dir + "/" + train_val + ".span", 'r')
+    
+    if sample:
+        indices = np.arange(data_size)
+        np.random.shuffle(indices)
+        indices = indices[:sample]
+        indices_rev = {indices[i]:i for i in range(sample)}
+        indices.sort()
+        questions = [0] * minibatch_size
+        contexts = [0] * minibatch_size
+        start_answers = [0] * minibatch_size
+        end_answers = [0] * minibatch_size
+        questions = []
+        contexts = []
+        start_answers = []
+        end_answers = []
+        indices_counter = 0
+        line_counter = 0
+        while indices_counter != minibatch_size:
+            question_line = question_id_file.readline()
+            context_line = context_id_file.readline()
+            answer_line = answer_file.readline()
+            if indices[indices_counter] == line_counter:
+                question = map(int, question_line.split(" "))
+                context = map(int, context_line().split(" "))
+                answer = map(int, answer_line.split(" "))
+                questions[indices_rev[indices[indices_counter]]] = question
+                contexts[indices_rev[indices[indices_counter]]] = context
+                start_answers[indices_rev[indices[indices_counter]]] = [answer[0]]
+                end_answers[indices_rev[indices[indices_counter]]] = [answer[1]]
+                indices_counter += 1
+            line_counter += 1
+        minibatch = [questions, contexts, start_answers, end_answers]
+        yield minibatch
+
+
+    else:
+        
+        for minibatch_start in np.arange(0, data_size, minibatch_size):
+            
+            questions = []
+            contexts = []
+            start_answers = []
+            end_answers = []
+            
+            for _ in range(minibatch_size):
+                question = map(int, question_id_file.readline().split(" "))
+                questions.append(question)
+
+                context = map(int, context_id_file.readline().split(" "))
+                contexts.append(context)
+
+                answer = map(int, answer_file.readline().split(" "))
+                start_answers.append([answer[0]])
+                end_answers.append([answer[1]])
+
+            minibatch = [questions, contexts, start_answers, end_answers]
+            yield minibatch
+        
+    question_id_file.close()
+    context_id_file.close()
+    answer_file.close()
+
