@@ -466,8 +466,8 @@ class QASystem(object):
         # Make files to append the scores as we get them
         training_scores_filename = train_dir + "/training_scores.txt"
         validation_scores_filename = train_dir + "/validation_scores.txt"
-        self.append_file_line(training_score_filename, "Epoch", "F1_score", "EM_score", "Epoch_time")
-        self.append_file_line(validation_score_filename, "Epoch", "F1_score", "EM_score", "Epoch_time")
+        self.append_file_line(training_scores_filename, "Epoch", "F1_score", "EM_score", "Epoch_time")
+        self.append_file_line(validation_scores_filename, "Epoch", "F1_score", "EM_score", "Epoch_time")
 
         q_val, p_val, a_val_s, a_val_e = val_dataset
         q, p, a_s, a_e = train_dataset 
@@ -484,8 +484,8 @@ class QASystem(object):
             f1_val, em_val = self.evaluate_answer(session, val_dataset, 100, True)
             
             # Log scores
-            self.append_file_line(training_score_filename, e, f1_train, em_train, epoch_time)
-            self.append_file_line(validation_score_filename, e, f1_val, em_val, epoch_time)
+            self.append_file_line(training_scores_filename, e, f1_train, em_train, epoch_time)
+            self.append_file_line(validation_scores_filename, e, f1_val, em_val, epoch_time)
             
 
     
