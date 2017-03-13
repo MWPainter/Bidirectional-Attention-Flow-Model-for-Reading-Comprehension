@@ -265,6 +265,9 @@ class QASystem(object):
         optimizer = self.FLAGS.optimizer
         self.updates = get_optimizer(optimizer)(self.FLAGS.learning_rate).minimize(self.loss)
 
+        # ==== Give the system a saver (also used for loading) ====
+        self.saver = tf.train.Saver()
+
         
 
     def setup_system(self):
@@ -474,8 +477,7 @@ class QASystem(object):
             toc = time.time()
             epoch_time = toc - tic
             # save your model here
-            saver = tf.train.Saver()
-            saver.save(session, train_dir + "/model_params", global_step=e)
+            self.saver.save(session, train_dir + "/model_params", global_step=e)
             val_loss = self.validate(session, val_dataset)
 
             f1_train, em_train = self.evaluate_answer(session, train_dataset, 100, True) # doing this cuz we wanna make sure it at least works well for the stuff it's already seen
