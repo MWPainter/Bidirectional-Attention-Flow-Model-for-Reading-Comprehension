@@ -2,7 +2,7 @@ import numpy as np
 
 def minibatch(data, minibatch_idx):
     return data[minibatch_idx] if type(data) is np.ndarray else [data[i] for i in minibatch_idx]
-
+"""
 def get_minibatches(data, minibatch_size, shuffle=True):
     list_data = type(data) is list and (type(data[0]) is list or type(data[0]) is np.ndarray)
     data_size = len(data[0]) if list_data else len(data)
@@ -13,7 +13,7 @@ def get_minibatches(data, minibatch_size, shuffle=True):
         minibatch_indices = indices[minibatch_start:minibatch_start + minibatch_size]
         yield [minibatch(d, minibatch_indices) for d in data] if list_data \
             else minibatch(data, minibatch_indices)
-
+"""
 def flatten(llist):
     return [item for sublist in llist for item in sublist]
 
@@ -67,8 +67,8 @@ def get_sample(dataset_address, sample_size=100):
     
     contexts = [0] * sample_size
     questions = [0] * sample_size
-    start_answers = [0] * sample_size
-    end_answers = [0] * sample_size
+    start_answers = [[]] * sample_size
+    end_answers = [[]] * sample_size
     indices_counter = 0
     line_counter = 0
     
@@ -82,8 +82,8 @@ def get_sample(dataset_address, sample_size=100):
             answer = map(int, answer_line.split(" "))
             questions[indices_rev[indices[indices_counter]]] = question
             contexts[indices_rev[indices[indices_counter]]] = context
-            start_answers[indices_rev[indices[indices_counter]]] = [answer[0]]
-            end_answers[indices_rev[indices[indices_counter]]] = [answer[1]]
+            start_answers[indices_rev[indices[indices_counter]]] = answer[0]
+            end_answers[indices_rev[indices[indices_counter]]] = answer[1]
             indices_counter += 1
         line_counter += 1
     

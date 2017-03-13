@@ -484,7 +484,7 @@ class QASystem(object):
         This method is equivalent to a step() function
         :return:
         """
-        counter = 0
+        counter = -1
         loss = 0.0
         if self.FLAGS.debug:
             dataset = [get_sample(dataset_address, self.FLAGS.batch_size)] # put in a list, becuase get_sample returns one minibatch and we want a list of minibatches
