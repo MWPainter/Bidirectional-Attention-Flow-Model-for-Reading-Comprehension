@@ -484,6 +484,7 @@ class QASystem(object):
         This method is equivalent to a step() function
         :return:
         """
+        counter = 0
         loss = 0.0
         if self.FLAGS.debug:
             dataset = [get_sample(dataset_address, self.FLAGS.batch_size)] # put in a list, becuase get_sample returns one minibatch and we want a list of minibatches
@@ -496,9 +497,10 @@ class QASystem(object):
             output_feed = [self.updates, self.loss, self.global_grad_norm]
             outputs = session.run(output_feed, feed_dict = input_feed)
             loss += outputs[1]
-
             global_grad_norm = outputs[2]
-            print("Global grad norm for update: {}".format(global_grad_norm))
+            counter = counter + 1 % 2500
+            if counter == 0:
+                print("Global grad norm for update: {}".format(global_grad_norm))
 
 
         return loss
