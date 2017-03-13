@@ -370,7 +370,7 @@ class QASystem(object):
             answer_str_list = [str(p[i]) for i in range(answer_beg,answer_end+1)]
             true_answer = ' '.join(answer_str_list)
             prediction = self.answer(session, p, q)
-	        prediction_str_list = [str(p[i]) for i in range(prediction[0], prediction[1]+1)]
+            prediction_str_list = [str(p[i]) for i in range(prediction[0], prediction[1]+1)]
             prediction_string = ' '.join(prediction_str_list)
             f1 += f1_score(prediction_string, true_answer)
             em += exact_match_score(prediction_string, true_answer)
