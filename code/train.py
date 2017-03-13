@@ -112,8 +112,8 @@ def main(_):
     # Do what you need to load datasets from FLAGS.data_dir
     #train_dataset = load_dataset(FLAGS.data_dir, "train")
     #val_dataset = load_dataset(FLAGS.data_dir, "val")
-    train_dataset_address = data_dir + "/train"
-    val_dataset_address = data_dir + "/val"
+    train_dataset_address = FLAGS.data_dir + "/train"
+    val_dataset_address = FLAGS.data_dir + "/val"
     
     embed_path = FLAGS.embed_path or pjoin("data", "squad", "glove.trimmed.{}.npz".format(FLAGS.embedding_size))
     vocab_path = FLAGS.vocab_path or pjoin(FLAGS.data_dir, "vocab.dat")

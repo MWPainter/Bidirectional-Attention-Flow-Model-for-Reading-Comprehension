@@ -408,21 +408,20 @@ class QASystem(object):
         
         f1 = 0.
         em = 0.
-        dataset = get_minibatches(dataset_address, sample, sample = True)
-        
-        for i in range(sample):
-            q, p, r1, r2 = [d[indices[i]] for d in dataset]
-            answer_beg = r1[0]
-            answer_end = r2[0]
-            answer_str_list = [str(p[i]) for i in range(answer_beg,answer_end+1)]
-            true_answer = ' '.join(answer_str_list)
-            prediction = self.answer(session, p, q)
-            prediction_str_list = [str(p[i]) for i in range(prediction[0], prediction[1]+1)]
-            prediction_string = ' '.join(prediction_str_list)
-            f1 += f1_score(prediction_string, true_answer)
-            em += exact_match_score(prediction_string, true_answer)
-        if log:
-            logging.info("F1: {}, EM: {}, for {} samples".format(f1, em, sample))
+        for dataset in get_minibatches(dataset_address, sample, sample = True):
+            for i in range(sample):
+                q, p, r1, r2 = [d[i] for d in dataset]
+                answer_beg = r1[0] # r1 is a list of 1 element
+                answer_end = r2[0] # r2 same
+                answer_str_list = [str(p[i]) for i in range(answer_beg,answer_end+1)]
+                true_answer = ' '.join(answer_str_list)
+                prediction = self.answer(session, p, q)
+                prediction_str_list = [str(p[i]) for i in range(prediction[0], prediction[1]+1)]
+                prediction_string = ' '.join(prediction_str_list)
+                f1 += f1_score(prediction_string, true_answer)
+                em += exact_match_score(prediction_string, true_answer)
+            if log:
+                logging.info("F1: {}, EM: {}, for {} samples".format(f1, em, sample))
 
         return f1, em
     

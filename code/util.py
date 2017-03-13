@@ -23,33 +23,29 @@ def flatten(llist):
 
 def get_minibatches(dataset_address, minibatch_size, sample = False):
     data_size = sum(1 for line in open(dataset_address + ".span"))
-    question_id_file = open(data_dir + "/" + train_val + ".ids.question", 'r')
-    context_id_file = open(data_dir + "/" + train_val + ".ids.context", 'r')
-    answer_file = open(data_dir + "/" + train_val + ".span", 'r')
+    question_id_file = open(dataset_address + ".ids.question", 'r')
+    context_id_file = open(dataset_address + ".ids.context", 'r')
+    answer_file = open(dataset_address + ".span", 'r')
     
     if sample:
         indices = np.arange(data_size)
         np.random.shuffle(indices)
-        indices = indices[:sample]
-        indices_rev = {indices[i]:i for i in range(sample)}
+        indices = indices[:minibatch_size]
+        indices_rev = {indices[i]:i for i in range(minibatch_size)}
         indices.sort()
         questions = [0] * minibatch_size
         contexts = [0] * minibatch_size
         start_answers = [0] * minibatch_size
         end_answers = [0] * minibatch_size
-        questions = []
-        contexts = []
-        start_answers = []
-        end_answers = []
         indices_counter = 0
         line_counter = 0
-        while indices_counter != minibatch_size:
+        while indices_counter < minibatch_size:
             question_line = question_id_file.readline()
             context_line = context_id_file.readline()
             answer_line = answer_file.readline()
             if indices[indices_counter] == line_counter:
                 question = map(int, question_line.split(" "))
-                context = map(int, context_line().split(" "))
+                context = map(int, context_line.split(" "))
                 answer = map(int, answer_line.split(" "))
                 questions[indices_rev[indices[indices_counter]]] = question
                 contexts[indices_rev[indices[indices_counter]]] = context
@@ -58,7 +54,10 @@ def get_minibatches(dataset_address, minibatch_size, sample = False):
                 indices_counter += 1
             line_counter += 1
         minibatch = [questions, contexts, start_answers, end_answers]
-        yield minibatch
+        question_id_file.close()
+        context_id_file.close()
+        answer_file.close()
+        yield minibatch # if only want one sample, return just the value
 
 
     else:
@@ -82,7 +81,7 @@ def get_minibatches(dataset_address, minibatch_size, sample = False):
                 end_answers.append([answer[1]])
 
             minibatch = [questions, contexts, start_answers, end_answers]
-            yield minibatch
+            yield minibatch # yield, return as a generator
         
     question_id_file.close()
     context_id_file.close()
