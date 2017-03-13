@@ -451,7 +451,7 @@ class QASystem(object):
         """
 	#input_feed[self.context_var] = test_paragraph
         #input_feed[self.question_var] = test_question
-	input_feed = self.create_feed_dict(test_question, test_paragraph)
+        input_feed = self.create_feed_dict(test_question, test_paragraph)
         output_feed = [self.a_s, self.a_e]
         outputs = session.run(output_feed, feed_dict = input_feed)
         return outputs    
@@ -465,7 +465,7 @@ class QASystem(object):
         """
         loss = 0.0
         if self.FLAGS.debug:
-            dataset = [get_sample(dataset_address)] # put in a list, becuase get_sample returns one minibatch and we want a list of minibatches
+            dataset = [get_sample(dataset_address, self.FLAGS.batch_size)] # put in a list, becuase get_sample returns one minibatch and we want a list of minibatches
         else:
             dataset = get_minibatches(dataset_address, self.FLAGS.batch_size)
         for question_batch, context_batch, answer_start_batch, answer_end_batch in dataset:
@@ -564,7 +564,7 @@ class QASystem(object):
         """
         valid_cost = 0.
         if self.FLAGS.debug:
-            dataset = [get_sample(valid_dataset_address)] # expecting a list of minibatches, but get sample returns a single minibatch
+            dataset = [get_sample(valid_dataset_address, self.FLAGS.batch_size)] # expecting a list of minibatches, but get sample returns a single minibatch
         else:
             dataset = get_minibatches(valid_dataset_address, self.FLAGS.batch_size)
         for question_batch, context_batch, answer_start_batch, answer_end_batch in dataset:
