@@ -33,7 +33,7 @@ class Encoder(object):
         self.state_size = state_size
         self.embedding_dim = embedding_dim # the dimension of the word embeddings
         self.cell = tf.nn.rnn_cell.BasicLSTMCell(self.state_size)
-        self.layer = layers # number of layers for a deep BiLSTM encoder, for both
+        self.layers = layers # number of layers for a deep BiLSTM encoder, for both
         
     def encode(self, question, question_mask, context_paragraph, context_mask):
         """
@@ -128,8 +128,8 @@ class Encoder(object):
             for i in range(self.layers):
                 scope = "rnn_layer_" + str(i)
                 (fw_final_state_i, bw_final_state_i), states = self.build_rnn(states, mask, scope=scope, reuse=True)
-                fw_final_states.append(fw_final_state_1)
-                bw_final_states.append(bw_final_state_1)
+                fw_final_states.append(fw_final_state_i)
+                bw_final_states.append(bw_final_state_i)
             final_representation = tf.concat(1, fw_final_states + bw_final_states)
             return final_representation, states
 
@@ -206,18 +206,18 @@ class Decoder(object):
         rnn_input = tf.concat(2, [context_par_vectors, attention_ctx_vector_tiled])
         
         with vs.variable_scope("answer_start"):
-            rnn_output, _ = self.build_deep_rnn(rnn_input)
+            rnn_output = self.build_deep_rnn(rnn_input)
             start_scores = self.linear(rnn_output, reuse=True) 
 
         with vs.variable_scope("answer_end"):
-            rnn_output, _ = self.build_deep_rnn(rnn_input)
+            rnn_output = self.build_deep_rnn(rnn_input)
             end_scores = self.linear(rnn_output, reuse=True) 
 
         return start_scores, end_scores
     
 
 
-    def build_deep_rnn(rnn_input):
+    def build_deep_rnn(self, rnn_input):
         """ 
         Builds a deep rnn using dynamic_rnn layers
         Returns the states from the FINAL layer
@@ -225,8 +225,8 @@ class Decoder(object):
         states = rnn_input
         for i in range(self.layers):
             scope = "rnn_layer_" + str(i)
-            with vs.variable_scope(scope, reuse=True):
-                states, _ = tf.nn.dynmaic_rnn(self.cell, states, dtype=tf.float32)
+            with vs.variable_scope(scope, True):
+                states, _ = tf.nn.dynamic_rnn(self.cell, states, dtype=tf.float32)
         return states           
 
 

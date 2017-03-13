@@ -140,7 +140,7 @@ def main(_):
         backprop_word_embeddings = True # false if that did better
         encoder_layers = 3 # 1, 2 if one of them did better
         decoder_layers = 3 
-    else 
+    elif not (FLAGS.model_name == "baseline"): 
         raise Exception("Invalid model name selected")
 
     # Do what you need to load datasets from FLAGS.data_dir
@@ -154,8 +154,8 @@ def main(_):
     # load in the embeddings
     embeddings = np.load(embed_path)['glove']
 
-    encoder = Encoder(state_size=FLAGS.state_size, embedding_dim=FLAGS.embedding_size, encoder_layers)
-    decoder = Decoder(output_size=FLAGS.state_size, decoder_layers)
+    encoder = Encoder(FLAGS.state_size, FLAGS.embedding_size, encoder_layers)
+    decoder = Decoder(FLAGS.state_size, decoder_layers)
 
     qa = QASystem(encoder, decoder, embeddings, backprop_word_embeddings)
 

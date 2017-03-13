@@ -192,3 +192,6 @@ Num params: 924200
 Number of params: 924200 (retreival took 1.527513 secs)
 F1: 2.88471728717, EM: 0.0, for 100 samples
 F1: 3.44710902996, EM: 0.0, for 100 samples
+Created model with fresh parameters.
+Num params: 924200
+Number of params: 924200 (retreival took 1.324114 secs)
