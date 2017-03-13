@@ -498,9 +498,9 @@ class QASystem(object):
             outputs = session.run(output_feed, feed_dict = input_feed)
             loss += outputs[1]
             global_grad_norm = outputs[2]
-            counter = counter + 1 % 2500
+            counter = counter + 1 % 500
             if counter == 0:
-                print("Global grad norm for update: {}".format(global_grad_norm))
+                logging.info("Global grad norm for update: {}".format(global_grad_norm))
 
 
         return loss
