@@ -1,7 +1,9 @@
 code/data/*
 code/download/*
+code/*.pyc
 login.txt
 data/*
 download/*
 *.pyc
 train/*
+log/*
