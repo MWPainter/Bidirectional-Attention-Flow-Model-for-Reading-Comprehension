@@ -81,40 +81,6 @@ def get_normalized_train_dir(train_dir):
         os.makedirs(train_dir)
     os.symlink(os.path.abspath(train_dir), global_train_dir)
     return global_train_dir
-
-def load_dataset(data_dir, train_val):
-    """
-    Loads the training data from the data directory
-    A question is a list of indices into the embeddings matrix
-    A context paragraph is a list of indices into the embeddings matrix
-    An answer is a pair of indices into the context paragraph
-    The training dataset contains a list of (question, context, answer) tuples
-    """
-    questions = []
-    with open(data_dir + "/" + train_val + ".ids.question") as question_id_file:
-        for line in question_id_file:
-            question = map(int, line.split(" ")) # map applies int(_) to all the strings to convert
-            questions.append(question)
-    
-    contexts = []
-    with open(data_dir + "/" + train_val + ".ids.context") as context_id_file:
-        for line in context_id_file:
-            context = map(int, line.split(" "))
-            contexts.append(context)
-
-    start_answers = []
-    end_answers = []
-    with open(data_dir + "/" + train_val + ".span") as answers_file: # span file contains the indices of the answers into the context paragraph
-        for line in answers_file:
-            answer = map(int, line.split(" "))
-            start_answers.append([answer[0]])
-            end_answers.append([answer[1]])
-    
-    # if we are debugging, we only want to return the first 200 or so examples from the training set
-    training_set = [questions, contexts, start_answers, end_answers]
-    if (FLAGS.debug):
-        training_set = [s[:FLAGS.debug_training_size] for s in training_set]
-    return training_set
             
 
 def main(_):
@@ -144,8 +110,10 @@ def main(_):
         raise Exception("Invalid model name selected")
 
     # Do what you need to load datasets from FLAGS.data_dir
-    train_dataset = load_dataset(FLAGS.data_dir, "train")
-    val_dataset = load_dataset(FLAGS.data_dir, "val")
+    #train_dataset = load_dataset(FLAGS.data_dir, "train")
+    #val_dataset = load_dataset(FLAGS.data_dir, "val")
+    train_dataset_address = data_dir + "/train"
+    val_dataset_address = data_dir + "/val"
     
     embed_path = FLAGS.embed_path or pjoin("data", "squad", "glove.trimmed.{}.npz".format(FLAGS.embedding_size))
     vocab_path = FLAGS.vocab_path or pjoin(FLAGS.data_dir, "vocab.dat")
@@ -177,7 +145,7 @@ def main(_):
         if not os.path.exists(save_train_dir):
             os.makedirs(save_train_dir)
         create_train_dir = (save_train_dir)
-        qa.train(sess, train_dataset, val_dataset, save_train_dir)
+        qa.train(sess, train_dataset_address, val_dataset_address, save_train_dir)
 
 
 if __name__ == "__main__":
