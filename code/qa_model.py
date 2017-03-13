@@ -314,8 +314,7 @@ class QASystem(object):
 
         # ==== set up training/updating procedure ====
         params = tf.trainable_variables()
-        optimizer = self.FLAGS.optimizer
-        self.updates = get_optimizer(optimizer)(self.FLAGS.learning_rate).minimize(self.loss)
+        self.setup_optimizer()
 
         # ==== Give the system a saver (also used for loading) ====
         self.saver = tf.train.Saver()
@@ -374,6 +373,28 @@ class QASystem(object):
             l2 = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.a_e, labels=self.answer_end)
             self.loss = l1 + l2
             
+
+    def setup_optimizer(self):
+        optimizer_option = self.FLAGS.optimizer
+        optimizer = get_optimizer(optimizer_option)(self.FLAGS.learning_rate)
+
+        grads = optimizer.compute_gradients(self.loss)
+        only_grads = [grad[0] for grad in grads]
+        only_vars = [grad[1] for grad in grads]
+
+        if not self.FLAGS.clip_norms:
+            self.updates = optimizer.minimize(self.loss)
+            self.global_grad_norm = tf.global_norm(only_grads)
+            return
+
+        max_grad_norm = tf.constant(self.FLAGS.max_gradient_norm)
+        only_grads, _ = tf.clip_by_global_norm(only_grads, max_grad_norm)
+        grads = zip(only_grads, only_vars)
+        self.updates = optimizer.apply_gradients(grads)
+
+        # Get global norm so we can print it in training
+        self.global_grad_norm = tf.global_norm(only_grads)
+
 
     def setup_embeddings(self):
         """
@@ -472,9 +493,13 @@ class QASystem(object):
             answer_start_batch = flatten(answer_start_batch) # batch returns dim=[batch_size,1] need dim=[batch_size,]
             answer_end_batch = flatten(answer_end_batch) # batch returns dim=[batch_size,1] need dim=[batch_size,]
             input_feed = self.create_feed_dict(question_batch, context_batch, answer_start_batch, answer_end_batch)
-            output_feed = [self.updates, self.loss]
+            output_feed = [self.updates, self.loss, self.global_grad_norm]
             outputs = session.run(output_feed, feed_dict = input_feed)
             loss += outputs[1]
+
+            global_grad_norm = outputs[2]
+            print("Global grad norm for update: {}".format(global_grad_norm))
+
 
         return loss
 
