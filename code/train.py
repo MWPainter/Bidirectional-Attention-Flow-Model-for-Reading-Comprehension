@@ -144,7 +144,6 @@ def main(_):
 
         save_train_dir = get_normalized_train_dir(FLAGS.train_dir)
         save_train_dir += "/" + FLAGS.model_name # each model gets its own subdirectory
-        print(save_train_dir)
         if not os.path.exists(save_train_dir):
             os.makedirs(save_train_dir)
         create_train_dir = (save_train_dir)
