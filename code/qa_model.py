@@ -463,7 +463,7 @@ class QASystem(object):
             loss = self.optimize(session, train_dataset)
             # save your model here
             saver = tf.train.Saver()
-            saver.save(session, train_dir + "epoch_" + str(e))
+            saver.save(session, train_dir + "/model_params", global_step=e)
             val_loss = self.validate(session, val_dataset)
 
             self.evaluate_answer(session, val_dataset, 100, True)
