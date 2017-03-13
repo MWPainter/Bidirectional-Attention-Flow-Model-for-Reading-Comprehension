@@ -1,2 +1,0 @@
-model_checkpoint_path: "/tmp/cs224n-squad-train/model_params-0"
-all_model_checkpoint_paths: "/tmp/cs224n-squad-train/model_params-0"

@@ -4,3 +4,4 @@ login.txt
 data/*
 download/*
 *.pyc
+train/*
