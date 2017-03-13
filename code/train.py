@@ -122,8 +122,8 @@ def main(_):
     # load in the embeddings
     embeddings = np.load(embed_path)['glove']
 
-    encoder = Encoder(FLAGS.state_size, FLAGS.embedding_size, encoder_layers)
-    decoder = Decoder(FLAGS.state_size, decoder_layers)
+    encoder = Encoder(FLAGS.state_size, FLAGS.embedding_size, FLAGS.dropout, encoder_layers)
+    decoder = Decoder(FLAGS.state_size, FLAGS.dropout, decoder_layers)
 
     qa = QASystem(encoder, decoder, embeddings, backprop_word_embeddings)
 

@@ -29,9 +29,10 @@ def get_optimizer(opt):
 
 
 class Encoder(object):
-    def __init__(self, state_size, embedding_dim, layers):
+    def __init__(self, state_size, embedding_dim, dropout_prob, layers):
         self.state_size = state_size
         self.embedding_dim = embedding_dim # the dimension of the word embeddings
+        self.dropout_prob = tf.constant(dropout)
         self.cell = tf.nn.rnn_cell.BasicLSTMCell(self.state_size)
         self.layers = layers # number of layers for a deep BiLSTM encoder, for both
         
@@ -162,6 +163,10 @@ class Encoder(object):
             cur_state_tiled = tf.tile(cur_state_tiled, tf.pack([1, seq_len, 1])) # dim = [batch_size, seq_len, statesize]
             cur_state_tiled = tf.expand_dims(cur_state_tiled, 3) # dim = [batch_size, seq_len, state_size, 1]
             rnn_state_expanded = tf.expand_dims(rnn_states, 2) # dim = [batch_size, seq_len, 1, state_size]
+
+            # Apply dropout to the inner product
+            cur_state_tiled = tf.nn.dropout(cur_state_tiled, self.dropout_prob)
+            rnn_state_expanded = tf.nn.dropout(rnn_state_expanded, self.dropout_prob)
             
             # Matrix product. Each input is a rank 4 tensor. For each index in batch_size, seq_len, we comupute an quadratic form. [1, state_size] * [state_size, state_size] * [state_size, 1]
             attention_scores = tf.matmul(tf.matmul(rnn_state_expanded, inner_product_matrix_tiled), cur_state_tiled) # dim = [batch_size, seq_len, 1, 1]
@@ -178,9 +183,10 @@ class Encoder(object):
 
 
 class Decoder(object):
-    def __init__(self, state_size, layers):
+    def __init__(self, state_size, dropout_prob, layers):
         self.state_size = state_size
         self.cell = tf.nn.rnn_cell.BasicLSTMCell(self.state_size)
+        self.dropout_prob = tf.constant(dropout_prob)
         self.layers = layers # number of layers for a deep LSTM decoder
         self.FLAGS = tf.app.flags.FLAGS # Get a link to tf.app.flags  
 
@@ -233,6 +239,7 @@ class Decoder(object):
 
     def linear(self, rnn_output, scope="default_linear", reuse=False):
         with vs.variable_scope(scope, reuse):
+            rnn_output = tf.nn.dropout(rnn_output, self.dropout_prob) # apply dropout to the beginning of the linear layer
             weights = tf.get_variable("weights", shape=(self.FLAGS.state_size, 1), dtype=tf.float32, initializer=tf.contrib.layers.xavier_initializer())
             weights_tiled = tf.expand_dims(weights, axis=0)
             weights_tiled = tf.tile(weights_tiled, tf.pack([tf.shape(rnn_output)[0], 1, 1]))
@@ -240,7 +247,7 @@ class Decoder(object):
             matmul = tf.matmul(rnn_output, weights_tiled) 
             matmul = tf.reduce_max(matmul, axis=2) # dim = [batch_size, context_len, 1] -> [batch_size, context_len]
             result = tf.add(matmul, bias)
-            return result
+        return result
 
 
     
@@ -298,7 +305,6 @@ class QASystem(object):
         self.context_mask = tf.sign(self.context_word_ids_placeholder, name ="context_mask")
         
         self.answer_placeholder = tf.placeholder(tf.int32, (None, 2), name="answer_placeholder")
-        self.dropout_placeholder = tf.placeholder(tf.float32, name="dropout_placeholder")
         
         # ==== assemble pieces ====
         with tf.variable_scope("qa", initializer=tf.uniform_unit_scaling_initializer(1.0)):
@@ -331,7 +337,7 @@ class QASystem(object):
         # self.a_s, self.a_e = decoder.decode(q_h, p_h)
 
         
-    def create_feed_dict(self, question_batch, context_batch, answer_start_batch = None, answer_end_batch = None, dropout = None):
+    def create_feed_dict(self, question_batch, context_batch, answer_start_batch = None, answer_end_batch = None):
         feed_dict = {}
        	list_data = type(context_batch) is list and (type(context_batch[0]) is list or type(context_batch[0]) is np.ndarray) 
 	if not list_data:
@@ -355,8 +361,6 @@ class QASystem(object):
         if answer_end_batch is not None:
             feed_dict[self.answer_end] = answer_end_batch
 
-        if dropout is not None:
-            feed_dict[self.dropout_placeholder] = dropout
         return feed_dict                
             
 
