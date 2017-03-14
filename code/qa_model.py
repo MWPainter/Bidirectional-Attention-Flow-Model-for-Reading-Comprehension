@@ -343,15 +343,21 @@ class QASystem(object):
 	    context_batch = [context_batch]
 	    question_batch = [question_batch]
         for i in range(len(question_batch)):
-            padding_length = self.FLAGS.question_max_length - len(question_batch[i])
-	    padding = [0] * padding_length
-            question_batch[i].extend(padding)
+            if len(question_batch[i]) >= self.FLAGS.question_max_length:
+                question_batch[i] = question_batch[i][:self.FLAGS.question_max_length]
+            else:
+                padding_length = self.FLAGS.question_max_length - len(question_batch[i])
+                padding = [0] * padding_length
+                question_batch[i].extend(padding)
 	feed_dict[self.question_word_ids_placeholder] = question_batch
 
 	for i in range(len(context_batch)):
-            padding_length = self.FLAGS.context_paragraph_max_length - len(context_batch[i])
-            padding = [0] * padding_length
-            context_batch[i].extend(padding)
+            if len(context_batch[i]) >= self.FLAGS.context_paragraph_max_length:
+                context_batch[i] = context_batch[i][:self.FLAGS.context_paragraph_max_length]
+            else:
+                padding_length = self.FLAGS.context_paragraph_max_length - len(context_batch[i])
+                padding = [0] * padding_length
+                context_batch[i].extend(padding)
 	feed_dict[self.context_word_ids_placeholder] = context_batch
             
         if answer_start_batch is not None:
