@@ -439,7 +439,7 @@ class QASystem(object):
         
         f1 = 0.
         em = 0.
-        dataset, num_samples = get_sample(dataset_address, sample, self.FLAGS.context_paragraph_max_length)
+        dataset, num_samples = get_sample(dataset_address, self.FLAGS.context_paragraph_max_length, sample)
         test_questions, test_paragraphs, test_start_answers, test_end_answers = dataset
         predictions = self.answer(session, test_paragraphs, test_questions)
         for i in range(sample):
@@ -497,7 +497,7 @@ class QASystem(object):
         counter = -1
         loss = 0.0
         if self.FLAGS.debug:
-            dataset, _ = get_sample(dataset_address, self.FLAGS.batch_size, self.FLAGS.context_paragraph_max_length)
+            dataset, _ = get_sample(dataset_address, self.FLAGS.context_paragraph_max_length, self.FLAGS.batch_size)
             dataset = [dataset] # put in a list, becuase get_sample returns one minibatch and we want a list of minibatches
         else:
             dataset = get_minibatches(dataset_address, self.FLAGS.batch_size, self.FLAGS.context_paragraph_max_length)
@@ -602,7 +602,7 @@ class QASystem(object):
         """
         valid_cost = 0.
         if self.FLAGS.debug:
-            dataset, _ = get_sample(valid_dataset_address, self.FLAGS.batch_size, self.FLAGS.context_paragraph_max_length)
+            dataset, _ = get_sample(valid_dataset_address, self.FLAGS.context_paragraph_max_length, self.FLAGS.batch_size)
             dataset = [dataset] # expecting a list of minibatches, but get sample returns a single minibatch
         else:
             dataset = get_minibatches(valid_dataset_address, self.FLAGS.batch_size, self.FLAGS.context_paragraph_max_length)
