@@ -440,17 +440,20 @@ class QASystem(object):
         f1 = 0.
         em = 0.
         dataset = get_sample(dataset_address, sample)
+        test_questions, test_paragraphs, test_start_answers, test_end_answers = dataset
+        predictions = self.answer(session, test_paragraphs, test_questions)
         for i in range(sample):
-            q, p, r1, r2 = [d[i] for d in dataset]
-            answer_beg = r1[0] # r1 is a list of 1 element
-            answer_end = r2[0] # r2 same
-            answer_str_list = [str(p[i]) for i in range(answer_beg,answer_end+1)]
+            answer_beg = test_start_answers[i]
+            answer_end = test_end_answers[i]
+            answer_str_list = [str(p[i]) for i in range(answer_beg, answer_end+1)]
             true_answer = ' '.join(answer_str_list)
-            prediction = self.answer(session, p, q)
-            prediction_str_list = [str(p[i]) for i in range(prediction[0], prediction[1]+1)]
+            prediction_str_list = [str(p[i]) for i in range(predictions[i][0], predictions[i][1]+1)]
             prediction_string = ' '.join(prediction_str_list)
             f1 += f1_score(prediction_string, true_answer)
             em += exact_match_score(prediction_string, true_answer)
+        f1 = 1.0 * f1 / sample
+        em = 1.0 * em / sample
+        
         if log:
             logging.info("F1: {}, EM: {}, for {} samples".format(f1, em, sample))
 
@@ -465,7 +468,8 @@ class QASystem(object):
 
         a_s = np.argmax(yp1, axis = 1)
         a_e = np.argmax(yp2, axis = 1)
-        return [a_s, a_e]
+        predictions = [[a_s[i], a_e[i]] for i in range(len(a_e))]
+        return predictions
     
     # this function is only called by answer above. returns probabilities for the start and end words
     
