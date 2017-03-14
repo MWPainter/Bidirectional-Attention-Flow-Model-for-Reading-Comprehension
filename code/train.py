@@ -18,7 +18,7 @@ logging.basicConfig(level=logging.INFO)
 tf.app.flags.DEFINE_float("learning_rate", 0.01, "Learning rate.")
 tf.app.flags.DEFINE_float("max_gradient_norm", 10.0, "Clip gradients to this norm.")
 tf.app.flags.DEFINE_float("dropout", 0.15, "Fraction of units randomly dropped on non-recurrent connections.")
-tf.app.flags.DEFINE_integer("batch_size", 18, "Batch size to use during training.")
+tf.app.flags.DEFINE_integer("batch_size", 32, "Batch size to use during training.")
 tf.app.flags.DEFINE_integer("epochs", 10, "Number of epochs to train.")
 tf.app.flags.DEFINE_integer("state_size", 50, "Size of each model layer.")
 tf.app.flags.DEFINE_integer("output_size", 300, "The output size of your model.")
@@ -39,6 +39,9 @@ tf.app.flags.DEFINE_integer("debug_training_size", 100, "A smaller training size
 tf.app.flags.DEFINE_boolean("log_score", True, "If we want to log f1 and em score in a txt file, alongside the model params in the pa4/train/<model_name> directory")
 tf.app.flags.DEFINE_string("model_name", "baseline", "The model to use, pick from: 'baseline', 'embedding_backprop', 'deep_encoder_2layer', 'deep_encoder_3layer', 'deep_decoder_2layer', 'QRNNs'")
 tf.app.flags.DEFINE_boolean("clip_norms", True, "Do we wish to clip norms?")
+tf.app.flags.DEFINE_string("train_prefix", "train.short", "Prefix of all the training data files")
+tf.app.flags.DEFINE_string("val_prefix", "val.short", "Prefix of all the validation data files")
+
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -113,8 +116,8 @@ def main(_):
     # Do what you need to load datasets from FLAGS.data_dir
     #train_dataset = load_dataset(FLAGS.data_dir, "train")
     #val_dataset = load_dataset(FLAGS.data_dir, "val")
-    train_dataset_address = FLAGS.data_dir + "/train"
-    val_dataset_address = FLAGS.data_dir + "/val"
+    train_dataset_address = FLAGS.data_dir + "/" + FLAGS.train_prefix
+    val_dataset_address = FLAGS.data_dir + "/" + FLAGS.val_prefix
     
     embed_path = FLAGS.embed_path or pjoin("data", "squad", "glove.trimmed.{}.npz".format(FLAGS.embedding_size))
     vocab_path = FLAGS.vocab_path or pjoin(FLAGS.data_dir, "vocab.dat")

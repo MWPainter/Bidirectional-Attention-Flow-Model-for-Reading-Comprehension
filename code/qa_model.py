@@ -491,7 +491,7 @@ class QASystem(object):
         :return:
         """
         counter = -1
-        loss = 0.0
+        #loss = 0.0
         if self.FLAGS.debug:
             dataset = [get_sample(dataset_address, self.FLAGS.batch_size)] # put in a list, becuase get_sample returns one minibatch and we want a list of minibatches
         else:
@@ -502,14 +502,14 @@ class QASystem(object):
             input_feed = self.create_feed_dict(question_batch, context_batch, answer_start_batch, answer_end_batch)
             output_feed = [self.updates, self.loss, self.global_grad_norm]
             outputs = session.run(output_feed, feed_dict = input_feed)
-            loss += outputs[1]
+            #loss += outputs[1]
             global_grad_norm = outputs[2]
             counter = (counter + 1) % self.FLAGS.print_every
             if counter == 0:
                 logging.info("Global grad norm for update: {}".format(global_grad_norm))
 
 
-        return loss
+
 
     def train(self, session, train_dataset_address, val_dataset_address, train_dir):
         """
@@ -557,7 +557,7 @@ class QASystem(object):
         #q, p, a_s, a_e = train_dataset 
         for e in range(self.FLAGS.epochs):
             tic = time.time()
-            loss = self.optimize(session, train_dataset_address)
+            self.optimize(session, train_dataset_address)
             toc = time.time()
             epoch_time = toc - tic
             # save your model here
