@@ -24,7 +24,7 @@ def flatten(llist):
 
 
 
-def get_minibatches(dataset_address, minibatch_size = 100):
+def get_minibatches(dataset_address, max_context_length, minibatch_size = 100):
     data_size = sum(1 for line in open(dataset_address + ".span"))
     question_id_file = open(dataset_address + ".ids.question", 'r')
     context_id_file = open(dataset_address + ".ids.context", 'r')

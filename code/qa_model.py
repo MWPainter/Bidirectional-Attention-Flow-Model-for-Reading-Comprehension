@@ -500,7 +500,7 @@ class QASystem(object):
             dataset, _ = get_sample(dataset_address, self.FLAGS.context_paragraph_max_length, self.FLAGS.batch_size)
             dataset = [dataset] # put in a list, becuase get_sample returns one minibatch and we want a list of minibatches
         else:
-            dataset = get_minibatches(dataset_address, self.FLAGS.batch_size, self.FLAGS.context_paragraph_max_length)
+            dataset = get_minibatches(dataset_address, self.FLAGS.context_paragraph_max_length, self.FLAGS.batch_size)
         for question_batch, context_batch, answer_start_batch, answer_end_batch in dataset:
             answer_start_batch = flatten(answer_start_batch) # batch returns dim=[batch_size,1] need dim=[batch_size,]
             answer_end_batch = flatten(answer_end_batch) # batch returns dim=[batch_size,1] need dim=[batch_size,]
@@ -605,7 +605,7 @@ class QASystem(object):
             dataset, _ = get_sample(valid_dataset_address, self.FLAGS.context_paragraph_max_length, self.FLAGS.batch_size)
             dataset = [dataset] # expecting a list of minibatches, but get sample returns a single minibatch
         else:
-            dataset = get_minibatches(valid_dataset_address, self.FLAGS.batch_size, self.FLAGS.context_paragraph_max_length)
+            dataset = get_minibatches(valid_dataset_address, self.FLAGS.context_paragraph_max_length, self.FLAGS.batch_size)
         for question_batch, context_batch, answer_start_batch, answer_end_batch in dataset:
             valid_cost += self.test(sess, question_batch, context_batch, answer_start_batch, answer_end_batch)
 
