@@ -30,17 +30,17 @@ tf.app.flags.DEFINE_string("train_dir", "train", "Training directory to save the
 tf.app.flags.DEFINE_string("load_train_dir", "", "Training directory to load model parameters from to resume training (default: {train_dir}).")
 tf.app.flags.DEFINE_string("log_dir", "log", "Path to store log and flag files (default: ./log)")
 tf.app.flags.DEFINE_string("optimizer", "adam", "adam / sgd")
-tf.app.flags.DEFINE_integer("print_every", 50, "How many iterations to do per print.") # want to print every 1000 examples (so approx 100 times per epoch)
+tf.app.flags.DEFINE_integer("print_every", 100, "How many iterations to do per print.") # want to print every 1000 examples (so approx 100 times per epoch)
 tf.app.flags.DEFINE_integer("keep", 0, "How many checkpoints to keep, 0 indicates keep all.")
 tf.app.flags.DEFINE_string("vocab_path", "data/squad/vocab.dat", "Path to vocab file (default: ./data/squad/vocab.dat)")
 tf.app.flags.DEFINE_string("embed_path", "", "Path to the trimmed GLoVe embedding (default: ./data/squad/glove.trimmed.{embedding_size}.npz)")
 tf.app.flags.DEFINE_boolean("debug", False, "Are we debugging?")
 tf.app.flags.DEFINE_integer("debug_training_size", 100, "A smaller training size for debugging, so that epochs are quick, and we can test logging etc")
 tf.app.flags.DEFINE_boolean("log_score", True, "If we want to log f1 and em score in a txt file, alongside the model params in the pa4/train/<model_name> directory")
-tf.app.flags.DEFINE_string("model_name", "baseline", "The model to use, pick from: 'baseline', 'embedding_backprop', 'deep_encoder_2layer', 'deep_encoder_3layer', 'deep_decoder_2layer', 'QRNNs'")
+tf.app.flags.DEFINE_string("model_name", "baseline", "The model to use, pick from: 'baseline', 'embedding_backprop', 'deep_encoder_2layer', 'deep_encoder_3layer', 'deep_decoder_2layer', 'deep_decoder_3layer', 'QRNNs'")
 tf.app.flags.DEFINE_boolean("clip_norms", True, "Do we wish to clip norms?")
-tf.app.flags.DEFINE_string("train_prefix", "train.short", "Prefix of all the training data files")
-tf.app.flags.DEFINE_string("val_prefix", "val.short", "Prefix of all the validation data files")
+tf.app.flags.DEFINE_string("train_prefix", "train", "Prefix of all the training data files")
+tf.app.flags.DEFINE_string("val_prefix", "val", "Prefix of all the validation data files")
 
 
 FLAGS = tf.app.flags.FLAGS

@@ -151,12 +151,14 @@ class Encoder(object):
         """
 
         # Compute scores for each rnn state
-        state_size = self.state_size * 2 # vectors we're working with are concatinations of two vectors
+        final_lstm_layer_state_size = self.state_size * 2 # concatination of two vectors
+        question_rep_state_size = self.state_size * 2 * self.layers # the question vector concatinates self.layers * 2 vectors 
         batch_size = tf.shape(rnn_states)[0]
         seq_len = tf.shape(rnn_states)[1]
         with vs.variable_scope(scope, reuse):
             # Setup variables to be able to make the matrix product
-            inner_product_matrix = tf.get_variable("inner_produce_matrix", shape=(state_size, state_size), initializer=tf.contrib.layers.xavier_initializer()) # dim = [statesize, statesize]
+            inner_product_shape = (final_lstm_layer_state_size, question_rep_state_size)
+            inner_product_matrix = tf.get_variable("inner_produce_matrix", shape=inner_product_shape, initializer=tf.contrib.layers.xavier_initializer()) # dim = [statesize, statesize]
             inner_product_matrix_tiled = tf.expand_dims(tf.expand_dims(inner_product_matrix, 0), 0) # dim = [1, 1, statesize, statesize]
             inner_product_matrix_tiled = tf.tile(inner_product_matrix_tiled, tf.pack([batch_size, seq_len, 1, 1])) # dim = [batch_size, seq_len, statesize, statesize]
             cur_state_tiled = tf.expand_dims(cur_state, 1) # dim = [batch_size, 1, statesize]
@@ -442,7 +444,7 @@ class QASystem(object):
         dataset, num_samples = get_sample(dataset_address, self.FLAGS.context_paragraph_max_length, sample)
         test_questions, test_paragraphs, test_start_answers, test_end_answers = dataset
         predictions = self.answer(session, test_paragraphs, test_questions)
-        for i in range(sample):
+        for i in range(num_samples):
             answer_beg = test_start_answers[i][0] # this is a list of length 1
             answer_end = test_end_answers[i][0] # same
             answer_str_list = [str(test_paragraphs[i][j]) for j in range(answer_beg, answer_end+1)]
@@ -451,8 +453,8 @@ class QASystem(object):
             prediction_string = ' '.join(prediction_str_list)
             f1 += f1_score(prediction_string, true_answer)
             em += exact_match_score(prediction_string, true_answer)
-        f1 = 1.0 * f1 / num_samples
-        em = 1.0 * em / num_samples
+        f1 = 1.0 * f1 / samples
+        em = 1.0 * em / samples
         
         if log:
             logging.info("F1: {}, EM: {}, for {} samples".format(f1, em, sample))
