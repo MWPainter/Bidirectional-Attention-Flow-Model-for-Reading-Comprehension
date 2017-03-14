@@ -1,8 +1,10 @@
 import numpy as np
+import random
 
+"""
 def minibatch(data, minibatch_idx):
     return data[minibatch_idx] if type(data) is np.ndarray else [data[i] for i in minibatch_idx]
-"""
+
 def get_minibatches(data, minibatch_size, shuffle=True):
     list_data = type(data) is list and (type(data[0]) is list or type(data[0]) is np.ndarray)
     data_size = len(data[0]) if list_data else len(data)
@@ -14,12 +16,13 @@ def get_minibatches(data, minibatch_size, shuffle=True):
         yield [minibatch(d, minibatch_indices) for d in data] if list_data \
             else minibatch(data, minibatch_indices)
 """
+
+
+
 def flatten(llist):
     return [item for sublist in llist for item in sublist]
 
 
-#remember to take a second look at evaluate_answer in qa_model. that function needs slightly
-# different values from get_minibatches
 
 def get_minibatches(dataset_address, minibatch_size = 100):
     data_size = sum(1 for line in open(dataset_address + ".span"))
@@ -35,13 +38,20 @@ def get_minibatches(dataset_address, minibatch_size = 100):
         end_answers = []
         
         for _ in range(minibatch_size):
-            question = map(int, question_id_file.readline().split(" "))
+            question_line = question_id_file.readline()
+            context_line = context_id_file.readline()
+            answer_line = answer_file.readline()
+
+            if (question_line == ""): # EOF
+                break
+            
+            question = map(int, question_line.split(" "))
             questions.append(question)
 
-            context = map(int, context_id_file.readline().split(" "))
+            context = map(int, context_line.split(" "))
             contexts.append(context)
 
-            answer = map(int, answer_file.readline().split(" "))
+            answer = map(int, answer_line.split(" "))
             start_answers.append([answer[0]])
             end_answers.append([answer[1]])
 
@@ -55,40 +65,35 @@ def get_minibatches(dataset_address, minibatch_size = 100):
 
 
 def get_sample(dataset_address, sample_size=100): 
+    
     data_size = sum(1 for line in open(dataset_address + ".span"))
-    question_id_file = open(dataset_address + ".ids.question", 'r')
+
+    #question_id_file = open(dataset_address + ".ids.question", 'r')
     context_id_file = open(dataset_address + ".ids.context", 'r')
     answer_file = open(dataset_address + ".span", 'r')    
-    indices = np.arange(data_size)
-    np.random.shuffle(indices)
-    indices = indices[:sample_size]
-    indices_rev = {indices[i]:i for i in range(sample_size)}
-    indices.sort()
-    
-    contexts = [0] * sample_size
-    questions = [0] * sample_size
-    start_answers = [[]] * sample_size
-    end_answers = [[]] * sample_size
-    indices_counter = 0
-    line_counter = 0
-    
-    while indices_counter < sample_size:
-        question_line = question_id_file.readline()
+
+    indices = set(random.sample(range(0, data_size), sample_size))
+
+    contexts = []
+    questions = []
+    start_answers = []
+    end_answers = []
+
+    counter = 0
+    for question_line in open(dataset_address + ".ids.question", 'r'):
         context_line = context_id_file.readline()
         answer_line = answer_file.readline()
-        if indices[indices_counter] == line_counter:
+        if counter in indices:
+            # This is one of the selected rows, add it to the minibatch
             question = map(int, question_line.split(" "))
             context = map(int, context_line.split(" "))
             answer = map(int, answer_line.split(" "))
-            questions[indices_rev[indices[indices_counter]]] = question
-            contexts[indices_rev[indices[indices_counter]]] = context
-            start_answers[indices_rev[indices[indices_counter]]] = answer[0]
-            end_answers[indices_rev[indices[indices_counter]]] = answer[1]
-            indices_counter += 1
-        line_counter += 1
-    
-    final_sample = [questions, contexts, start_answers, end_answers]
-    question_id_file.close()
+            questions.append(question)
+            contexts.append(context)
+            start_answers.append([answer[0]])
+            end_answers.append([answer[1]])
+        counter += 1
+
     context_id_file.close()
     answer_file.close()
-    return final_sample 
+    return [questions, contexts, start_answers, end_answers] 
