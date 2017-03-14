@@ -443,11 +443,11 @@ class QASystem(object):
         test_questions, test_paragraphs, test_start_answers, test_end_answers = dataset
         predictions = self.answer(session, test_paragraphs, test_questions)
         for i in range(sample):
-            answer_beg = test_start_answers[i]
-            answer_end = test_end_answers[i]
-            answer_str_list = [str(p[i]) for i in range(answer_beg, answer_end+1)]
+            answer_beg = test_start_answers[i][0] # this is a list of length 1
+            answer_end = test_end_answers[i][0] # same
+            answer_str_list = [str(test_paragraphs[i][j]) for j in range(answer_beg, answer_end+1)]
             true_answer = ' '.join(answer_str_list)
-            prediction_str_list = [str(p[i]) for i in range(predictions[i][0], predictions[i][1]+1)]
+            prediction_str_list = [str(test_paragraphs[i][j]) for j in range(predictions[i][0], predictions[i][1]+1)]
             prediction_string = ' '.join(prediction_str_list)
             f1 += f1_score(prediction_string, true_answer)
             em += exact_match_score(prediction_string, true_answer)
