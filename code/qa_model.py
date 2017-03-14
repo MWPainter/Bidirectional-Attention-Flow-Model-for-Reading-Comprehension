@@ -439,7 +439,7 @@ class QASystem(object):
         
         f1 = 0.
         em = 0.
-        dataset = get_sample(dataset_address, sample)
+        dataset, num_samples = get_sample(dataset_address, sample, self.FLAGS.context_paragraph_max_length)
         test_questions, test_paragraphs, test_start_answers, test_end_answers = dataset
         predictions = self.answer(session, test_paragraphs, test_questions)
         for i in range(sample):
@@ -451,8 +451,8 @@ class QASystem(object):
             prediction_string = ' '.join(prediction_str_list)
             f1 += f1_score(prediction_string, true_answer)
             em += exact_match_score(prediction_string, true_answer)
-        f1 = 1.0 * f1 / sample
-        em = 1.0 * em / sample
+        f1 = 1.0 * f1 / num_samples
+        em = 1.0 * em / num_samples
         
         if log:
             logging.info("F1: {}, EM: {}, for {} samples".format(f1, em, sample))
@@ -497,9 +497,10 @@ class QASystem(object):
         counter = -1
         #loss = 0.0
         if self.FLAGS.debug:
-            dataset = [get_sample(dataset_address, self.FLAGS.batch_size)] # put in a list, becuase get_sample returns one minibatch and we want a list of minibatches
+            dataset, _ = get_sample(dataset_address, self.FLAGS.batch_size, self.FLAGS.context_paragraph_max_length)
+            dataset = [dataset] # put in a list, becuase get_sample returns one minibatch and we want a list of minibatches
         else:
-            dataset = get_minibatches(dataset_address, self.FLAGS.batch_size)
+            dataset = get_minibatches(dataset_address, self.FLAGS.batch_size, self.FLAGS.context_paragraph_max_length)
         for question_batch, context_batch, answer_start_batch, answer_end_batch in dataset:
             answer_start_batch = flatten(answer_start_batch) # batch returns dim=[batch_size,1] need dim=[batch_size,]
             answer_end_batch = flatten(answer_end_batch) # batch returns dim=[batch_size,1] need dim=[batch_size,]
@@ -601,9 +602,10 @@ class QASystem(object):
         """
         valid_cost = 0.
         if self.FLAGS.debug:
-            dataset = [get_sample(valid_dataset_address, self.FLAGS.batch_size)] # expecting a list of minibatches, but get sample returns a single minibatch
+            dataset, _ = get_sample(valid_dataset_address, self.FLAGS.batch_size, self.FLAGS.context_paragraph_max_length)
+            dataset = [dataset] # expecting a list of minibatches, but get sample returns a single minibatch
         else:
-            dataset = get_minibatches(valid_dataset_address, self.FLAGS.batch_size)
+            dataset = get_minibatches(valid_dataset_address, self.FLAGS.batch_size, self.FLAGS.context_paragraph_max_length)
         for question_batch, context_batch, answer_start_batch, answer_end_batch in dataset:
             valid_cost += self.test(sess, question_batch, context_batch, answer_start_batch, answer_end_batch)
 
