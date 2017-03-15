@@ -453,8 +453,8 @@ class QASystem(object):
             prediction_string = ' '.join(prediction_str_list)
             f1 += f1_score(prediction_string, true_answer)
             em += exact_match_score(prediction_string, true_answer)
-        f1 = 1.0 * f1 / samples
-        em = 1.0 * em / samples
+        f1 = 1.0 * f1 / sample
+        em = 1.0 * em / sample
         
         if log:
             logging.info("F1: {}, EM: {}, for {} samples".format(f1, em, sample))
