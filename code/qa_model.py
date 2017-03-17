@@ -175,7 +175,7 @@ class Encoder(object):
         :return: [..., d], dtype=float
         """
         with tf.name_scope(scope or "Softsel"):
-            a = softmax(logits, mask=mask)
+            a = tf.nn.softmax(logits)
             target_rank = len(target.get_shape().as_list())
             out = tf.reduce_sum(tf.expand_dims(a, -1) * target, target_rank - 2)
             return out
@@ -193,8 +193,11 @@ class Encoder(object):
             u_mask_aug = tf.tile(tf.expand_dims(u_mask, 1), [1, JX, 1])
             hu_mask = h_mask_aug #& u_mask_aug
 
-	    args = [h_aug, u_aug, h_aug * u_aug]
-            u_logits = _linear([self.flatten(arg, 1) for arg in args], 1, True, bias_start=0, scope="u_logits")
+	    h_aug_reduced = tf.reduce_sum(tf.reduce_sum(h_aug, axis=3), axis=2)
+	    u_aug_reduced = tf.reduce_sum(tf.reduce_sum(u_aug, axis=3), axis=2)
+	    u_aug_reduced.set_shape([None, self.FLAGS.output_size])
+	    args = [h_aug_reduced, u_aug_reduced, h_aug_reduced * u_aug_reduced] 
+            u_logits = _linear(args, 1, True, bias_start=0, scope="u_logits")
             u_logits = tf.add(u_logits, (1 - tf.cast(hu_mask, 'float')) * -1e30)
 
             u_a = self.softsel(u_aug, u_logits)  # [N, JX, d]
