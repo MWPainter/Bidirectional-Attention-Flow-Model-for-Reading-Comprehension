@@ -62,13 +62,13 @@ class Encoder(object):
                 dims = [batch_size, context_paragraph_length, state_size]
         """
 
-        if model_name == "BiDAF":
+        if self.model_name == "BiDAF":
             _, question_states = self.build_deep_rnn(question, question_mask, scope="question_BiLSTM", reuse=True)
         else:
             # Build a BiLSTM layer for the question (we only want the concatinated end vectors here)
             question_vector, _ = self.build_deep_rnn(question, question_mask, scope="question_BiLSTM", reuse=True)
 
-        if model_name == "BiDAF":
+        if self.model_name == "BiDAF":
             context_input = context_paragraph
         else:
             # Concatanate the question vector to every word in the context paragraph, by tiling the question vector and concatinating
@@ -80,7 +80,7 @@ class Encoder(object):
         _, context_states = self.build_deep_rnn(context_input, context_mask, scope="context_BiLSTM", reuse=True)
 
         # Create a 'context' vector from attention
-        if model_name == "BiDAF":
+        if self.model_name == "BiDAF":
             attention = self.create_attention_matrix_bidaf(context_states, question_states, context_mask, question_mask, scope="AttentionVector", reuse=True)
         else:
             attention = self.create_attention_context_vector(context_states, question_vector, scope="AttentionVector", reuse=True)
@@ -155,7 +155,7 @@ class Encoder(object):
             
             h_mask_aug = tf.tile(tf.expand_dims(h_mask, 2), [1, 1, JQ])
             u_mask_aug = tf.tile(tf.expand_dims(u_mask, 1), [1, JX, 1])
-            hu_mask = h_mask_aug & u_mask_aug
+            hu_mask = h_mask_aug #& u_mask_aug
 
             u_logits = self.linear([h_aug, u_aug, h_aug * u_aug], reuse = True)
             u_logits = tf.add(u_logits, (1 - tf.cast(hu_mask, 'float')) * -1e30)
