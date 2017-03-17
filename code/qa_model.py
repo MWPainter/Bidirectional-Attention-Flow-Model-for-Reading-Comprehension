@@ -198,10 +198,10 @@ class Encoder(object):
     	    u_aug_reduced.set_shape([None, self.FLAGS.output_size])
     	    args = [h_aug_reduced, u_aug_reduced, h_aug_reduced * u_aug_reduced] 
             u_logits = _linear(args, 1, True, bias_start=0, scope="u_logits")
-            u_logits = tf.add(u_logits, (1 - tf.cast(hu_mask, 'float')) * -1e30)
+            #u_logits = tf.add(u_logits, (1 - tf.cast(hu_mask, 'float')) * -1e30)
 
             u_a = self.softsel(u_aug, u_logits)  # [N, JX, d]
-            h_a = self.softsel(h, tf.reduce_max(u_logits, 2))  # [N, d]
+            h_a = self.softsel(h, u_logits)  # [N, d]
             h_a = tf.tile(tf.expand_dims(h_a, 1), [1, JX, 1])
 
             p0 = tf.concat(2, [h, u_a, h * u_a, h * h_a])
@@ -290,13 +290,14 @@ class Decoder(object):
             g1_reduced = tf.reduce_sum(g1, axis=2)
             att_reduced = tf.reduce_sum(attention, axis=2) 
             logits = _linear([g1_reduced, att_reduced], self.state_size, True, bias_start=0, scope="logits_1")
-            logits = tf.add(logits, (1 - tf.cast(context_mask, 'float')) * -1e30)
+            #logits = tf.add(logits, (1 - tf.cast(context_mask, 'float')) * -1e30)
             a1i = self.softsel(tf.reshape(g1, [self.FLAGS.batch_size, x_len, 2 * self.state_size]), tf.reshape(logits, [self.FLAGS.batch_size, x_len]))
-            a1i = tf.tile(tf.expand_dims, 1), [1, x_len, 1]
+            a1i = tf.tile(tf.expand_dims(a1i, 1), [1, x_len, 1])
 
             _, g2 = self.build_deep_brnn(tf.concat(2, [attention, g1, a1i, g1 * a1i]), context_mask, scope="decode_bilstm_3", reuse=True)
-            logits2 = _linear([g2, attention], self.state_size, True, bias_start=0, scope="logits_2")
-            logits2 = tf.add(logits2, (1 - tf.cast(context_mask, 'float')) * -1e30)
+	    g2_reduced = tf.reduce_sum(g2, axis=2)
+            logits2 = _linear([g2_reduced, att_reduced], self.state_size, True, bias_start=0, scope="logits_2")
+            #logits2 = tf.add(logits2, (1 - tf.cast(context_mask, 'float')) * -1e30)
 
             flat_logits = tf.reshape(logits, [-1, x_len])
             flat_yp = tf.nn.softmax(flat_logits)  # [-1, JX]
@@ -409,7 +410,7 @@ class Decoder(object):
         :return: [..., d], dtype=float
         """
         with tf.name_scope(scope or "Softsel"):
-            a = softmax(logits, mask=mask)
+            a = tf.nn.softmax(logits)
             target_rank = len(target.get_shape().as_list())
             out = tf.reduce_sum(tf.expand_dims(a, -1) * target, target_rank - 2)
             return out
