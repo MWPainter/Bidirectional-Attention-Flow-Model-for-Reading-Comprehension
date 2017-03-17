@@ -110,8 +110,9 @@ def main(_):
         backprop_word_embeddings = True # false if that did better
         encoder_layers = 3 # 1, 2 if one of them did better
         decoder_layers = 3 
-    elif FLAGS.model_name = "BiDAF":
+    elif FLAGS.model_name == "BiDAF":
         # do nothing
+	pass
     elif not (FLAGS.model_name == "baseline"): 
         raise Exception("Invalid model name selected")
 
