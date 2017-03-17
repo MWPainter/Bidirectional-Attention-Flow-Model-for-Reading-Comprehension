@@ -9,6 +9,8 @@ import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 from tensorflow.python.ops import variable_scope as vs
+from my.tensorflow.nn import softsel, get_logits, highway_network, multi_conv1d
+from my.tensorflow.rnn import bidirectional_dynamic_rnn
 from util import get_sample, get_minibatches, flatten
 from evaluate import exact_match_score, f1_score
 
@@ -29,12 +31,13 @@ def get_optimizer(opt):
 
 
 class Encoder(object):
-    def __init__(self, state_size, embedding_dim, dropout_prob, layers):
+    def __init__(self, state_size, embedding_dim, dropout_prob, layers, model_name):
         self.state_size = state_size
         self.embedding_dim = embedding_dim # the dimension of the word embeddings
         self.dropout_prob = tf.constant(dropout_prob)
         self.cell = tf.nn.rnn_cell.BasicLSTMCell(self.state_size)
         self.layers = layers # number of layers for a deep BiLSTM encoder, for both
+        self.model_name = model_name
         
     def encode(self, question, question_mask, context_paragraph, context_mask):
         """
@@ -61,22 +64,31 @@ class Encoder(object):
                 dims = [batch_size, context_paragraph_length, state_size]
         """
 
-        # Build a BiLSTM layer for the question (we only want the concatinated end vectors here)
-        question_vector, _ = self.build_deep_rnn(question, question_mask, scope="question_BiLSTM", reuse=True)
+        if model_name == "BiDAF":
+            _, question_states = self.build_deep_rnn(question, question_mask, scope="question_BiLSTM", reuse=True)
+        else:
+            # Build a BiLSTM layer for the question (we only want the concatinated end vectors here)
+            question_vector, _ = self.build_deep_rnn(question, question_mask, scope="question_BiLSTM", reuse=True)
 
-        # Concatanate the question vector to every word in the context paragraph, by tiling the question vector and concatinating
-        question_vector_tiled = tf.expand_dims(question_vector, 1)
-        question_vector_tiled = tf.tile(question_vector_tiled, tf.pack([1, tf.shape(context_paragraph)[1], 1]))
-        context_input = tf.concat(2, [context_paragraph, question_vector_tiled])
+        if model_name == "BiDAF":
+            context_input = context_paragraph
+        else:
+            # Concatanate the question vector to every word in the context paragraph, by tiling the question vector and concatinating
+            question_vector_tiled = tf.expand_dims(question_vector, 1)
+            question_vector_tiled = tf.tile(question_vector_tiled, tf.pack([1, tf.shape(context_paragraph)[1], 1]))
+            context_input = tf.concat(2, [context_paragraph, question_vector_tiled])
 
         # Build BiLSTM layer for the context (want all output states here)
         _, context_states = self.build_deep_rnn(context_input, context_mask, scope="context_BiLSTM", reuse=True)
 
         # Create a 'context' vector from attention
-        attention_context_vector = self.create_attention_context_vector(context_states, question_vector, scope="AttentionVector", reuse=True)
+        if model_name == "BiDAF":
+            attention = self.create_attention_matrix_bidaf(context_states, question_states, context_mask, question_mask, scope="AttentionVector", reuse=True)
+        else:
+            attention = self.create_attention_context_vector(context_states, question_vector, scope="AttentionVector", reuse=True)
 
         # Retuuuurn
-        return (attention_context_vector, context_states)
+        return (attention, context_states)
 
 
 
@@ -135,6 +147,26 @@ class Encoder(object):
             return final_representation, states
 
 
+    def create_attention_matrix_bidaf(self, h, u, h_mask, u_mask, scope="default scope", reuse=False):
+        with tf.variable_scope(scope, reuse):
+            JX = tf.shape(h)[1]
+            JQ = tf.shape(u)[1]
+
+            h_aug = tf.tile(tf.expand_dims(h, 2), [1, 1, JQ, 1])
+            u_aug = tf.tile(tf.expand_dims(u, 1), [1, JX, 1, 1])
+            
+            h_mask_aug = tf.tile(tf.expand_dims(h_mask, 2), [1, 1, JQ])
+            u_mask_aug = tf.tile(tf.expand_dims(u_mask, 1), [1, JX, 1])
+            hu_mask = h_mask_aug & u_mask_aug
+
+            u_logits = get_logits([h_aug, u_aug], None, True, mask=hu_mask, scope='u_logits')
+            u_a = softsel(u_aug, u_logits)  # [N, JX, d]
+            h_a = softsel(h, tf.reduce_max(u_logits, 2))  # [N, d]
+            h_a = tf.tile(tf.expand_dims(h_a, 1), [1, JX, 1])
+
+            p0 = tf.concat(2, [h, u_a, h * u_a, h * h_a])
+        return p0
+
 
     def create_attention_context_vector(self, rnn_states, cur_state, scope="default scope", reuse=False):
         """
@@ -192,7 +224,7 @@ class Decoder(object):
         self.layers = layers # number of layers for a deep LSTM decoder
         self.FLAGS = tf.app.flags.FLAGS # Get a link to tf.app.flags  
 
-    def decode(self, attention_ctx_vector, context_par_vectors):
+    def decode(self, attention, context_par_vectors, context_mask):
         """
         Takes the encoder output, which is the whole replac of states for the context BiLSTM and 
         an attention vector, computed from the question representation and uses this to feed a LSTM for decoding
@@ -205,21 +237,45 @@ class Decoder(object):
 
         The number of layers is how many LSTM's are used / how deep the network is 
 
-        :param attention_ctx_vector: the attention context vector, computed using the question representation over the output from the context states (in the encoder)
+        :param attention: the attention context vector, computed using the question representation over the output from the context states (in the encoder)
         :param context_par_vectors: the states from the BiLSTM in the encoder from the context paragraph
         :return: A probability distribution over the context paragraph for where the beginning and end of the answer is
         """
-        attention_ctx_vector = tf.expand_dims(attention_ctx_vector, 1)
-        attention_ctx_vector_tiled = tf.tile(attention_ctx_vector, tf.pack([1, tf.shape(context_par_vectors)[1], 1]))
-        rnn_input = tf.concat(2, [context_par_vectors, attention_ctx_vector_tiled])
-        
-        with vs.variable_scope("answer_start"):
-            rnn_output = self.build_deep_rnn(rnn_input)
-            start_scores = self.linear(rnn_output, reuse=True) 
+        if self.FLAGS.model_name == "BiDAF":
+            x_len = tf.shape(context_par_vectors)[1]
+            (fw_g0, bw_g0), _ = bidirectional_dynamic_rnn(self.cell, self.cell, attention, x_len, dtype='float', scope='g0')  # [N, JX, 2d]
+            g0 = tf.concat(2, [fw_g0, bw_g0])
+            (fw_g1, bw_g1), _ = bidirectional_dynamic_rnn(self.cell, self.cell, g0, x_len, dtype='float', scope='g1')  # [N, JX, 2d]
+            g1 = tf.concat(2, [fw_g1, bw_g1])
 
-        with vs.variable_scope("answer_end"):
-            rnn_output = self.build_deep_rnn(rnn_input)
-            end_scores = self.linear(rnn_output, reuse=True) 
+            logits = get_logits([g1, p0], self.state_size, True, mask=context_mask, scope='logits1')
+            a1i = softsel(tf.reshape(g1, [N, x_len, 2 * d]), tf.reshape(logits, [N, x_len]))
+            a1i = tf.tile(tf.expand_dims, 1), [1, x_len, 1]
+
+            (fw_g2, bw_g2), _ = bidirectional_dynamic_rnn(self.cell, self.cell, tf.concat(2, [attention, g1, a1i, g1 * a1i]),
+                                                          x_len, dtype='float', scope='g2')  # [N, JX, 2d]
+            g2 = tf.concat(2, [fw_g2, bw_g2])
+            logits2 = get_logits([g2, p0], self.state_size, True, mask=context_mask, scope='logits2')
+
+            flat_logits = tf.reshape(logits, [-1, x_len])
+            flat_yp = tf.nn.softmax(flat_logits)  # [-1, JX]
+            start_scores = tf.reshape(flat_yp, [-1, x_len])
+            flat_logits2 = tf.reshape(logits2, [-1, x_len])
+            flat_yp2 = tf.nn.softmax(flat_logits2)
+            end_scores = tf.reshape(flat_yp2, [-1, x_len])
+
+        else:
+            attention = tf.expand_dims(attention, 1)
+            attention_ctx_vector_tiled = tf.tile(attention, tf.pack([1, tf.shape(context_par_vectors)[1], 1]))
+            rnn_input = tf.concat(2, [context_par_vectors, attention_ctx_vector_tiled])
+        
+            with vs.variable_scope("answer_start"):
+                rnn_output = self.build_deep_rnn(rnn_input)
+                start_scores = self.linear(rnn_output, reuse=True) 
+
+            with vs.variable_scope("answer_end"):
+                rnn_output = self.build_deep_rnn(rnn_input)
+                end_scores = self.linear(rnn_output, reuse=True) 
 
         return start_scores, end_scores
     
@@ -331,7 +387,7 @@ class QASystem(object):
         :return:
         """
         attentionVector, contextVectors = self.encoder.encode(self.question_var, self.question_mask, self.context_var, self.context_mask)
-        self.a_s, self.a_e = self.decoder.decode(attentionVector, contextVectors)
+        self.a_s, self.a_e = self.decoder.decode(attentionVector, contextVectors, self.context_mask)
         
         # q_o, q_h = encoder.encode(self.question_Var)
         # p_o, p_h= encoder.encode(self.paragraph_Var, init_state = q_h, reuse = True)
