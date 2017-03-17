@@ -37,7 +37,7 @@ tf.app.flags.DEFINE_string("embed_path", "", "Path to the trimmed GLoVe embeddin
 tf.app.flags.DEFINE_boolean("debug", False, "Are we debugging?")
 tf.app.flags.DEFINE_integer("debug_training_size", 100, "A smaller training size for debugging, so that epochs are quick, and we can test logging etc")
 tf.app.flags.DEFINE_boolean("log_score", True, "If we want to log f1 and em score in a txt file, alongside the model params in the pa4/train/<model_name> directory")
-tf.app.flags.DEFINE_string("model_name", "BiDAF", "The model to use, pick from: 'baseline', 'embedding_backprop', 'deep_encoder_2layer', 'deep_encoder_3layer', 'deep_decoder_2layer', 'deep_decoder_3layer', 'QRNNs', 'BiDAF'")
+tf.app.flags.DEFINE_string("model_name", "embedding_backprop", "The model to use, pick from: 'baseline', 'embedding_backprop', 'deep_encoder_2layer', 'deep_encoder_3layer', 'deep_decoder_2layer', 'deep_decoder_3layer', 'QRNNs', 'BiDAF'")
 tf.app.flags.DEFINE_boolean("clip_norms", True, "Do we wish to clip norms?")
 tf.app.flags.DEFINE_string("train_prefix", "train", "Prefix of all the training data files")
 tf.app.flags.DEFINE_string("val_prefix", "val", "Prefix of all the validation data files")

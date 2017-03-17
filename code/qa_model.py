@@ -8,6 +8,7 @@ import logging
 import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
+from tensorflow.python.ops.rnn_cell import _linear
 from tensorflow.python.ops import variable_scope as vs
 from util import get_sample, get_minibatches, flatten
 from evaluate import exact_match_score, f1_score
@@ -36,7 +37,8 @@ class Encoder(object):
         self.cell = tf.nn.rnn_cell.BasicLSTMCell(self.state_size)
         self.layers = layers # number of layers for a deep BiLSTM encoder, for both
         self.model_name = model_name
-        
+	self.FLAGS = tf.app.flags.FLAGS # Get a link to tf.app.flags
+
     def encode(self, question, question_mask, context_paragraph, context_mask):
         """
         Encoder function. Encodes the question and context paragraphs into some hidden representation.
@@ -156,7 +158,15 @@ class Encoder(object):
             result = tf.add(matmul, bias)
         return result
 
-    def softsel(target, logits, mask=None, scope=None):
+    def flatten(self, tensor, keep):
+        fixed_shape = tensor.get_shape().as_list()
+        start = len(fixed_shape) - keep
+        left = reduce(mul, [fixed_shape[i] or tf.shape(tensor)[i] for i in range(start)])
+        out_shape = [left] + [fixed_shape[i] or tf.shape(tensor)[i] for i in range(start, len(fixed_shape))]
+        flat = tf.reshape(tensor, out_shape)
+        return flat
+
+    def softsel(self, target, logits, mask=None, scope=None):
         """
         :param target: [ ..., J, d] dtype=float
         :param logits: [ ..., J], dtype=float
@@ -183,7 +193,8 @@ class Encoder(object):
             u_mask_aug = tf.tile(tf.expand_dims(u_mask, 1), [1, JX, 1])
             hu_mask = h_mask_aug #& u_mask_aug
 
-            u_logits = self.linear([h_aug, u_aug, h_aug * u_aug], reuse = True)
+	    args = [h_aug, u_aug, h_aug * u_aug]
+            u_logits = _linear([self.flatten(arg, 1) for arg in args], 1, True, bias_start=0, scope="u_logits")
             u_logits = tf.add(u_logits, (1 - tf.cast(hu_mask, 'float')) * -1e30)
 
             u_a = self.softsel(u_aug, u_logits)  # [N, JX, d]
@@ -384,7 +395,7 @@ class Decoder(object):
             result = tf.add(matmul, bias)
         return result
 
-    def softsel(target, logits, mask=None, scope=None):
+    def softsel(self, target, logits, mask=None, scope=None):
         """
         :param target: [ ..., J, d] dtype=float
         :param logits: [ ..., J], dtype=float
