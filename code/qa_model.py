@@ -37,7 +37,7 @@ class Encoder(object):
         self.cell = tf.nn.rnn_cell.BasicLSTMCell(self.state_size)
         self.layers = layers # number of layers for a deep BiLSTM encoder, for both
         self.model_name = model_name
-	self.FLAGS = tf.app.flags.FLAGS # Get a link to tf.app.flags
+        self.FLAGS = tf.app.flags.FLAGS # Get a link to tf.app.flags
 
     def encode(self, question, question_mask, context_paragraph, context_mask):
         """
@@ -193,10 +193,10 @@ class Encoder(object):
             u_mask_aug = tf.tile(tf.expand_dims(u_mask, 1), [1, JX, 1])
             hu_mask = h_mask_aug #& u_mask_aug
 
-	    h_aug_reduced = tf.reduce_sum(tf.reduce_sum(h_aug, axis=3), axis=2)
-	    u_aug_reduced = tf.reduce_sum(tf.reduce_sum(u_aug, axis=3), axis=2)
-	    u_aug_reduced.set_shape([None, self.FLAGS.output_size])
-	    args = [h_aug_reduced, u_aug_reduced, h_aug_reduced * u_aug_reduced] 
+    	    h_aug_reduced = tf.reduce_sum(tf.reduce_sum(h_aug, axis=3), axis=2)
+    	    u_aug_reduced = tf.reduce_sum(tf.reduce_sum(u_aug, axis=3), axis=2)
+    	    u_aug_reduced.set_shape([None, self.FLAGS.output_size])
+    	    args = [h_aug_reduced, u_aug_reduced, h_aug_reduced * u_aug_reduced] 
             u_logits = _linear(args, 1, True, bias_start=0, scope="u_logits")
             u_logits = tf.add(u_logits, (1 - tf.cast(hu_mask, 'float')) * -1e30)
 
@@ -287,13 +287,15 @@ class Decoder(object):
             _, g0 = self.build_deep_brnn(attention, context_mask, scope="decode_bilstm_1", reuse=True)
             _, g1 = self.build_deep_brnn(g0, context_mask, scope="decode_bilstm_2", reuse=True)
 
-            logits = self.linear([g1, attention, g1 * attention], reuse = True)
+            g1_reduced = tf.reduce_sum(g1, axis=2)
+            att_reduced = tf.reduce_sum(attention, axis=2) 
+            logits = _linear([g1_reduced, att_reduced], self.state_size, True, bias_start=0, scope="logits_1")
             logits = tf.add(logits, (1 - tf.cast(context_mask, 'float')) * -1e30)
             a1i = self.softsel(tf.reshape(g1, [self.FLAGS.batch_size, x_len, 2 * self.state_size]), tf.reshape(logits, [self.FLAGS.batch_size, x_len]))
             a1i = tf.tile(tf.expand_dims, 1), [1, x_len, 1]
 
             _, g2 = self.build_deep_brnn(tf.concat(2, [attention, g1, a1i, g1 * a1i]), context_mask, scope="decode_bilstm_3", reuse=True)
-            logits2 = self.linear([g2, attention, g2 * attention], reuse = True)
+            logits2 = _linear([g2, attention], self.state_size, True, bias_start=0, scope="logits_2")
             logits2 = tf.add(logits2, (1 - tf.cast(context_mask, 'float')) * -1e30)
 
             flat_logits = tf.reshape(logits, [-1, x_len])
