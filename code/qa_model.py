@@ -9,8 +9,6 @@ import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 from tensorflow.python.ops import variable_scope as vs
-from my.tensorflow.nn import softsel, get_logits, highway_network, multi_conv1d
-from my.tensorflow.rnn import bidirectional_dynamic_rnn
 from util import get_sample, get_minibatches, flatten
 from evaluate import exact_match_score, f1_score
 
@@ -159,9 +157,11 @@ class Encoder(object):
             u_mask_aug = tf.tile(tf.expand_dims(u_mask, 1), [1, JX, 1])
             hu_mask = h_mask_aug & u_mask_aug
 
-            u_logits = get_logits([h_aug, u_aug], None, True, mask=hu_mask, scope='u_logits')
-            u_a = softsel(u_aug, u_logits)  # [N, JX, d]
-            h_a = softsel(h, tf.reduce_max(u_logits, 2))  # [N, d]
+            u_logits = self.linear([h_aug, u_aug, h_aug * u_aug], reuse = True)
+            u_logits = tf.add(u_logits, (1 - tf.cast(hu_mask, 'float')) * -1e30)
+
+            u_a = self.softsel(u_aug, u_logits)  # [N, JX, d]
+            h_a = self.softsel(h, tf.reduce_max(u_logits, 2))  # [N, d]
             h_a = tf.tile(tf.expand_dims(h_a, 1), [1, JX, 1])
 
             p0 = tf.concat(2, [h, u_a, h * u_a, h * h_a])
@@ -242,20 +242,19 @@ class Decoder(object):
         :return: A probability distribution over the context paragraph for where the beginning and end of the answer is
         """
         if self.FLAGS.model_name == "BiDAF":
-            x_len = tf.shape(context_par_vectors)[1]
-            (fw_g0, bw_g0), _ = bidirectional_dynamic_rnn(self.cell, self.cell, attention, x_len, dtype='float', scope='g0')  # [N, JX, 2d]
-            g0 = tf.concat(2, [fw_g0, bw_g0])
-            (fw_g1, bw_g1), _ = bidirectional_dynamic_rnn(self.cell, self.cell, g0, x_len, dtype='float', scope='g1')  # [N, JX, 2d]
-            g1 = tf.concat(2, [fw_g1, bw_g1])
 
-            logits = get_logits([g1, p0], self.state_size, True, mask=context_mask, scope='logits1')
-            a1i = softsel(tf.reshape(g1, [N, x_len, 2 * d]), tf.reshape(logits, [N, x_len]))
+            x_len = tf.shape(context_par_vectors)[1]
+            _, g0 = self.build_deep_brnn(attention, context_mask, scope="decode_bilstm_1", reuse=True)
+            _, g1 = self.build_deep_brnn(g0, context_mask, scope="decode_bilstm_2", reuse=True)
+
+            logits = self.linear([g1, attention, g1 * attention], reuse = True)
+            logits = tf.add(logits, (1 - tf.cast(context_mask, 'float')) * -1e30)
+            a1i = self.softsel(tf.reshape(g1, [self.FLAGS.batch_size, x_len, 2 * self.state_size]), tf.reshape(logits, [self.FLAGS.batch_size, x_len]))
             a1i = tf.tile(tf.expand_dims, 1), [1, x_len, 1]
 
-            (fw_g2, bw_g2), _ = bidirectional_dynamic_rnn(self.cell, self.cell, tf.concat(2, [attention, g1, a1i, g1 * a1i]),
-                                                          x_len, dtype='float', scope='g2')  # [N, JX, 2d]
-            g2 = tf.concat(2, [fw_g2, bw_g2])
-            logits2 = get_logits([g2, p0], self.state_size, True, mask=context_mask, scope='logits2')
+            _, g2 = self.build_deep_brnn(tf.concat(2, [attention, g1, a1i, g1 * a1i]), context_mask, scope="decode_bilstm_3", reuse=True)
+            logits2 = self.linear([g2, attention, g2 * attention], reuse = True)
+            logits2 = tf.add(logits2, (1 - tf.cast(context_mask, 'float')) * -1e30)
 
             flat_logits = tf.reshape(logits, [-1, x_len])
             flat_yp = tf.nn.softmax(flat_logits)  # [-1, JX]
@@ -293,7 +292,59 @@ class Decoder(object):
                 states, _ = tf.nn.dynamic_rnn(self.cell, states, dtype=tf.float32)
         return states           
 
+    def build_rnn(self, inpt, mask, scope="default_scope", reuse=False):
+        """
+        Helper function to build a rolled out rnn. We need the mask to tell tf how far to roll out the network
+        
+        :param inpt: input to the rnn, should be a tf.placeholder/tf.variable
+            Dims: [batch_size, input_sequence_length, embedding_size], input_sequence_length is the question/context_paragraph length
+        :param mask: a tf.variable for the mask of the input, if there is a 0 in this, then the corresponding word is a <pad>
+            Dims: [batch_size, input_sequence_length]
+        :param scope: the variable scope to use
+        :param reuse: boolean if we should reuse parameters in each cell in the rolled out network (i.e. is it theoretically the "same cell" or different?)
+        :return: (fw_final_state, bw_final_state), concat(fw_all_states, bw_all_states)), 
+                final_state is the final states of (RELEVANT part) of the states
+                dim = [batch_size, cell_size] (cell_size = hidden state size of the lstm)
+                so dim of concatinated state is [batch_size, 2*cell_size]
+                all_states are the tf.variable's for all of the hidden states
+                dim = [batch_size, input_sequence_length, cell_size]
+                dim of the concatinated states is [batch_size, input_sequence_length, 2*cell_size]
+        """
 
+        # build the dynamic_rnn, compute lengths of the sentences (using mask) so tf knows how far it needs to roll out rnn
+        # fw_outputs, bw_outputs is of dim [batch_size, input_sequence_length, embedding_size], n.b. "input_lengths" below is smaller than "input_sequence_length"
+        # we think second output is the ("true") final state, but TF docs are ambiguous AF, so I don't really know. There may be problems here...
+        with vs.variable_scope(scope, reuse):
+            input_length = tf.reduce_sum(mask, axis=1) # dim = [batch_size]
+            (fw_outputs, bw_outputs), _ = tf.nn.bidirectional_dynamic_rnn(self.cell, self.cell, inpt, sequence_length=input_length, dtype=tf.float32, time_major=False) 
+            fw_final_state = fw_outputs[:,-1,:]
+            bw_final_state = bw_outputs[:,0,:]
+            state_history = tf.concat(2, [fw_outputs, bw_outputs])
+            return ((fw_final_state, bw_final_state), state_history)
+
+
+    
+    def build_deep_brnn(self, inpt, mask, scope="default_scope", reuse=False):
+        """
+        Use build_rnn to build a rolled out RNN, using the cell of type self.cell
+        We will make this 'self.layers' layers deep
+        See deep_rnn for description of the inputs
+        We feed the output history (concatination of the forward and backward history) into the next layer each time
+        Returns the the history of states for the TOPMOST layer of BiLSTM's and all of the final states concatinated together as a single vector representation
+        So if the forward final states are f1, ..., fn and backward are b1, ..., bn if there are n layers, then the single vector representation is
+        [f1; ...; fn; b1; ...; bn]
+        """
+        with vs.variable_scope(scope, reuse):
+            fw_final_states = []
+            bw_final_states = []
+            states = inpt
+            for i in range(self.layers):
+                scope = "rnn_layer_" + str(i)
+                (fw_final_state_i, bw_final_state_i), states = self.build_rnn(states, mask, scope=scope, reuse=True)
+                fw_final_states.append(fw_final_state_i)
+                bw_final_states.append(bw_final_state_i)
+            final_representation = tf.concat(1, fw_final_states + bw_final_states)
+            return final_representation, states
 
     def linear(self, rnn_output, scope="default_linear", reuse=False):
         with vs.variable_scope(scope, reuse):
@@ -306,6 +357,20 @@ class Decoder(object):
             matmul = tf.reduce_max(matmul, axis=2) # dim = [batch_size, context_len, 1] -> [batch_size, context_len]
             result = tf.add(matmul, bias)
         return result
+
+    def softsel(target, logits, mask=None, scope=None):
+        """
+        :param target: [ ..., J, d] dtype=float
+        :param logits: [ ..., J], dtype=float
+        :param mask: [ ..., J], dtype=bool
+        :param scope:
+        :return: [..., d], dtype=float
+        """
+        with tf.name_scope(scope or "Softsel"):
+            a = softmax(logits, mask=mask)
+            target_rank = len(target.get_shape().as_list())
+            out = tf.reduce_sum(tf.expand_dims(a, -1) * target, target_rank - 2)
+            return out
 
 
     
