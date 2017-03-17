@@ -37,10 +37,12 @@ tf.app.flags.DEFINE_string("embed_path", "", "Path to the trimmed GLoVe embeddin
 tf.app.flags.DEFINE_boolean("debug", False, "Are we debugging?")
 tf.app.flags.DEFINE_integer("debug_training_size", 100, "A smaller training size for debugging, so that epochs are quick, and we can test logging etc")
 tf.app.flags.DEFINE_boolean("log_score", True, "If we want to log f1 and em score in a txt file, alongside the model params in the pa4/train/<model_name> directory")
-tf.app.flags.DEFINE_string("model_name", "embedding_backprop", "The model to use, pick from: 'baseline', 'embedding_backprop', 'deep_encoder_2layer', 'deep_encoder_3layer', 'deep_decoder_2layer', 'deep_decoder_3layer', 'QRNNs', 'BiDAF'")
+tf.app.flags.DEFINE_string("model_name", "baseline", "The model to use, pick from: 'baseline', 'embedding_backprop', 'deep_encoder_2layer', 'deep_encoder_3layer', 'deep_decoder_2layer', 'deep_decoder_3layer', 'QRNNs', 'BiDAF'")
+tf.app.flags.DEFINE_string("model_version", "", "Make this '' for initial model, if we ever want to retrain a model, then we can use this (with '_i') to not overwrite the original data")
 tf.app.flags.DEFINE_boolean("clip_norms", True, "Do we wish to clip norms?")
 tf.app.flags.DEFINE_string("train_prefix", "train", "Prefix of all the training data files")
 tf.app.flags.DEFINE_string("val_prefix", "val", "Prefix of all the validation data files")
+tf.app.flags.DEFINE_integer("epoch_base", 0, "The first epoch, so that we are saving the correct model and outputting the correct numbers if we restarted")
 
 
 FLAGS = tf.app.flags.FLAGS
@@ -104,7 +106,7 @@ def main(_):
         encoder_layers = 3
     elif FLAGS.model_name == "deep_decoder_2layer":
         backprop_word_embeddings = True # false if that did better
-        encoder_layers = 3 # 1, 2 if one of them did better 
+        encoder_layers = 2 # 1, 2 if one of them did better 
         decoder_layer = 2
     elif FLAGS.model_name == "deep_decoder_3layer":
         backprop_word_embeddings = True # false if that did better
@@ -119,8 +121,8 @@ def main(_):
     # Do what you need to load datasets from FLAGS.data_dir
     #train_dataset = load_dataset(FLAGS.data_dir, "train")
     #val_dataset = load_dataset(FLAGS.data_dir, "val")
-    train_dataset_address = FLAGS.data_dir + "/" + FLAGS.train_prefix
-    val_dataset_address = FLAGS.data_dir + "/" + FLAGS.val_prefix
+    train_dataset_address = FLAGS.data_dir + "/" + FLAGS.train_prefix 
+    val_dataset_address = FLAGS.data_dir + "/" + FLAGS.val_prefix 
     
     embed_path = FLAGS.embed_path or pjoin("data", "squad", "glove.trimmed.{}.npz".format(FLAGS.embedding_size))
     vocab_path = FLAGS.vocab_path or pjoin(FLAGS.data_dir, "vocab.dat")
@@ -145,11 +147,11 @@ def main(_):
 
     with tf.Session() as sess:
         load_train_dir = get_normalized_train_dir(FLAGS.load_train_dir or FLAGS.train_dir)
-        load_train_dir += "/" + FLAGS.model_name # each model gets its own subdirectory
+        load_train_dir += "/" + FLAGS.model_name + FLAGS.model_version # each model gets its own subdirectory
         initialize_model(sess, qa, load_train_dir)
 
         save_train_dir = get_normalized_train_dir(FLAGS.train_dir)
-        save_train_dir += "/" + FLAGS.model_name # each model gets its own subdirectory
+        save_train_dir += "/" + FLAGS.model_name + FLAGS.model_version # each model gets its own subdirectory
         if not os.path.exists(save_train_dir):
             os.makedirs(save_train_dir)
         create_train_dir = (save_train_dir)

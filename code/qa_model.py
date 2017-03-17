@@ -721,20 +721,21 @@ class QASystem(object):
         #q_val, p_val, a_val_s, a_val_e = val_dataset
         #q, p, a_s, a_e = train_dataset 
         for e in range(self.FLAGS.epochs):
+            e_proper = e + self.FLAGS.epoch_base
             tic = time.time()
             self.optimize(session, train_dataset_address)
             toc = time.time()
             epoch_time = toc - tic
             # save your model here
-            self.saver.save(session, train_dir + "/model_params", global_step=e)
+            self.saver.save(session, train_dir + "/model_params", global_step=e_proper)
             val_loss = self.validate(session, val_dataset_address)
 
             f1_train, em_train = self.evaluate_answer(session, train_dataset_address, 100, True) # doing this cuz we wanna make sure it at least works well for the stuff it's already seen
             f1_val, em_val = self.evaluate_answer(session, val_dataset_address, 100, True)
             
             # Log scores
-            self.append_file_line(training_scores_filename, e, f1_train, em_train, epoch_time)
-            self.append_file_line(validation_scores_filename, e, f1_val, em_val, epoch_time)
+            self.append_file_line(training_scores_filename, e_proper, f1_train, em_train, epoch_time)
+            self.append_file_line(validation_scores_filename, e_proper, f1_val, em_val, epoch_time)
             
 
     

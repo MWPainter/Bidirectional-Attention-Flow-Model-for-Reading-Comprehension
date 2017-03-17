@@ -3,6 +3,7 @@ code/download/*
 code/*.pyc
 login.txt
 data/*
+olddata/*
 download/*
 *.pyc
 train/*
