@@ -144,6 +144,32 @@ class Encoder(object):
             final_representation = tf.concat(1, fw_final_states + bw_final_states)
             return final_representation, states
 
+    def linear(self, rnn_output, scope="default_linear", reuse=False):
+        with vs.variable_scope(scope, reuse):
+            rnn_output = tf.nn.dropout(rnn_output, self.dropout_prob) # apply dropout to the beginning of the linear layer
+            weights = tf.get_variable("weights", shape=(self.FLAGS.state_size, 1), dtype=tf.float32, initializer=tf.contrib.layers.xavier_initializer())
+            weights_tiled = tf.expand_dims(weights, axis=0)
+            weights_tiled = tf.tile(weights_tiled, tf.pack([tf.shape(rnn_output)[0], 1, 1]))
+            bias = tf.get_variable("bias", shape=(self.FLAGS.context_paragraph_max_length,), dtype=tf.float32, initializer=tf.constant_initializer(0.0))
+            matmul = tf.matmul(rnn_output, weights_tiled) 
+            matmul = tf.reduce_max(matmul, axis=2) # dim = [batch_size, context_len, 1] -> [batch_size, context_len]
+            result = tf.add(matmul, bias)
+        return result
+
+    def softsel(target, logits, mask=None, scope=None):
+        """
+        :param target: [ ..., J, d] dtype=float
+        :param logits: [ ..., J], dtype=float
+        :param mask: [ ..., J], dtype=bool
+        :param scope:
+        :return: [..., d], dtype=float
+        """
+        with tf.name_scope(scope or "Softsel"):
+            a = softmax(logits, mask=mask)
+            target_rank = len(target.get_shape().as_list())
+            out = tf.reduce_sum(tf.expand_dims(a, -1) * target, target_rank - 2)
+            return out
+
 
     def create_attention_matrix_bidaf(self, h, u, h_mask, u_mask, scope="default scope", reuse=False):
         with tf.variable_scope(scope, reuse):
