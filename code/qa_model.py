@@ -532,15 +532,13 @@ class QASystem(object):
 		        JX = self.FLAGS.context_paragraph_max_length
 
 		        loss_mask = tf.reduce_max(tf.cast(self.question_mask, 'float'), 1)
-		        losses = tf.nn.softmax_cross_entropy_with_logits(
-		            self.logits, tf.cast(tf.reshape(self.answer_start, [-1, JX]), 'float'))
+		        losses = tf.nn.softmax_cross_entropy_with_logits(self.logits, tf.cast(tf.reshape(self.answer_start, [-1, JX]), 'float'))
 		        ce_loss = tf.reduce_mean(loss_mask * losses)
 		        tf.add_to_collection('losses', ce_loss)
-		        ce_loss2 = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
-		            self.logits2, tf.cast(tf.reshape(self.answer_end, [-1, JX]), 'float')))
+		        ce_loss2 = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(self.logits2, tf.cast(tf.reshape(self.answer_end, [-1, JX]), 'float')))
 		        tf.add_to_collection('losses', ce_loss2)
 
-		        self.loss = tf.add_n(tf.get_collection('losses', scope="qa_answer"), name='loss')
+				self.loss = tf.add_n(tf.get_collection('losses', scope="qa_answer"), name='loss')
 		    else:
 		    	l1 = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.a_s, labels=self.answer_start)
 		    	l2 = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.a_e, labels=self.answer_end)
