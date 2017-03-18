@@ -1,6 +1,8 @@
 import numpy as np
 import tensorflow as tf
 import random
+from functools import reduce
+from operator import mul
 
 """
 def minibatch(data, minibatch_idx):
@@ -21,12 +23,31 @@ def get_minibatches(data, minibatch_size, shuffle=True):
 
 # flattens tensor of shape [..., d] into [x, d] where x is the product of ...
 def flatten(tensor):
-    return tf.reshape(tensor, [-1, tensor.get_shape().as_list()[-1]])
+    fixed_shape = tensor.get_shape().as_list()
+    start = len(fixed_shape) - 1
+    left = reduce(mul, [fixed_shape[i] or tf.shape(tensor)[i] for i in range(start)])
+    out_shape = [left] + [fixed_shape[i] or tf.shape(tensor)[i] for i in range(start, len(fixed_shape))]
+    flat = tf.reshape(tensor, out_shape)
+    return flat
+#def flatten(tensor):
+#    return tf.reshape(tensor, [-1, tensor.get_shape().as_list()[-1]])
 
 
 # reshapes tensor into ref's shape
 def reconstruct(tensor, ref):
-    return tf.reshape(tensor, ref.get_shape().as_list())
+    ref_shape = ref.get_shape().as_list()
+    tensor_shape = tensor.get_shape().as_list()
+    ref_stop = len(ref_shape) - 1
+    tensor_start = len(tensor_shape) - 1
+    pre_shape = [ref_shape[i] or tf.shape(ref)[i] for i in range(ref_stop)]
+    keep_shape = [tensor_shape[i] or tf.shape(tensor)[i] for i in range(tensor_start, len(tensor_shape))]
+    # pre_shape = [tf.shape(ref)[i] for i in range(len(ref.get_shape().as_list()[:-keep]))]
+    # keep_shape = tensor.get_shape().as_list()[-keep:]
+    target_shape = pre_shape + keep_shape
+    out = tf.reshape(tensor, target_shape)
+    return out
+#def reconstruct(tensor, ref):
+#    return tf.reshape(tensor, ref.get_shape().as_list())
 
 
 # first flattens logits, takes softmax, and reshapes it back
