@@ -480,7 +480,7 @@ class QASystem(object):
         """
         attentionVector, contextVectors = self.encoder.encode(self.question_var, self.question_mask, self.context_var, self.context_mask)
         if self.FLAGS.model_name == "BiDAF":
-        	self.logit, self.logit2, self.a_s, self.a_e = self.decoder.decode(attentionVector, contextVectors, self.context_mask)
+        	self.logits, self.logits2, self.a_s, self.a_e = self.decoder.decode(attentionVector, contextVectors, self.context_mask)
         else:
         	self.a_s, self.a_e = self.decoder.decode(attentionVector, contextVectors, self.context_mask)
         
@@ -528,19 +528,19 @@ class QASystem(object):
         :return:
         """
         with vs.variable_scope("loss"):
-        	if self.FLAGS.model_name == "BiDAF":
-		        JX = self.FLAGS.context_paragraph_max_length
-		        loss_mask = tf.reduce_max(tf.cast(self.question_mask, 'float'), 1)
-		        losses = tf.nn.softmax_cross_entropy_with_logits(self.logits, tf.cast(tf.reshape(self.answer_start, [-1, JX]), 'float'))
-		        ce_loss = tf.reduce_mean(loss_mask * losses)
-		        tf.add_to_collection('losses', ce_loss)
-		        ce_loss2 = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(self.logits2, tf.cast(tf.reshape(self.answer_end, [-1, JX]), 'float')))
-		        tf.add_to_collection('losses', ce_loss2)
-		        self.loss = tf.add_n(tf.get_collection('losses', scope="qa_answer"), name='loss')
-		    else:
-		    	l1 = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.a_s, labels=self.answer_start)
-		    	l2 = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.a_e, labels=self.answer_end)
-		    	self.loss = l1 + l2
+	    if self.FLAGS.model_name == "BiDAF":
+		JX = self.FLAGS.context_paragraph_max_length
+		loss_mask = tf.reduce_max(tf.cast(self.question_mask, 'float'), 1)
+		losses = tf.nn.softmax_cross_entropy_with_logits(self.logits, tf.cast(tf.reshape(self.answer_start, [-1, JX]), 'float'))
+		ce_loss = tf.reduce_mean(loss_mask * losses)
+		tf.add_to_collection('losses', ce_loss)
+		ce_loss2 = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(self.logits2, tf.cast(tf.reshape(self.answer_end, [-1, JX]), 'float')))
+		tf.add_to_collection('losses', ce_loss2)
+		self.loss = tf.add_n([ce_loss, ce_loss2])
+	    else:
+		l1 = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.a_s, labels=self.answer_start)
+		l2 = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.a_e, labels=self.answer_end)
+		self.loss = l1 + l2
 
     def setup_optimizer(self):
         optimizer_option = self.FLAGS.optimizer
