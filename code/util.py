@@ -45,7 +45,7 @@ def reconstruct(tensor, ref):
     # keep_shape = tensor.get_shape().as_list()[-keep:]
     target_shape = pre_shape + keep_shape
     out = tf.reshape(tensor, target_shape)
-    out = tf.squeeze(out, [len(args[0], get_shape().as_list())-1])
+    out = tf.squeeze(out, [len(ref.get_shape().as_list())-1])
     return out
 #def reconstruct(tensor, ref):
 #    return tf.reshape(tensor, ref.get_shape().as_list())
