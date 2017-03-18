@@ -541,10 +541,10 @@ class QASystem(object):
 		        tf.add_to_collection('losses', ce_loss2)
 
 		        self.loss = tf.add_n(tf.get_collection('losses', scope="qa_answer"), name='loss')
-        	else:
-            	l1 = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.a_s, labels=self.answer_start)
-            	l2 = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.a_e, labels=self.answer_end)
-            	self.loss = l1 + l2
+		    else:
+		    	l1 = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.a_s, labels=self.answer_start)
+		    	l2 = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.a_e, labels=self.answer_end)
+		    	self.loss = l1 + l2
             
 
     def setup_optimizer(self):
