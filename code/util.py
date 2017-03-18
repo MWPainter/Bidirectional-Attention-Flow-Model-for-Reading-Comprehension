@@ -51,9 +51,8 @@ def reconstruct(tensor, ref):
 
 
 # first flattens logits, takes softmax, and reshapes it back
-def softmax(logits, mask):
+def softmax(logits):
     with tf.name_scope("Softmax"):
-        logits = tf.add(logits, (1 - tf.cast(mask, 'float')) * -1e30)
         flat_logits = flatten(logits)
         flat_out = tf.nn.softmax(flat_logits)
         out = reconstruct(flat_out, logits)
@@ -61,9 +60,9 @@ def softmax(logits, mask):
 
 
 # creates U^tilde and h^tilde in c2q and q2c attention (and later in decode)
-def softsel(target, logits, mask):
+def softsel(target, logits):
     with tf.name_scope("Softsel"):
-        a = softmax(logits, mask)
+        a = softmax(logits)
         target_rank = len(target.get_shape().as_list())
         out = tf.reduce_sum(tf.expand_dims(a, -1) * target, target_rank - 2)
         return out
