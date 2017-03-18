@@ -18,8 +18,36 @@ def get_minibatches(data, minibatch_size, shuffle=True):
 """
 
 
+# flattens tensor of shape [..., d] into [x, d] where x is the product of ...
+def flatten(tensor):
+    return tf.reshape(tensor, [-1, tensor.get_shape().as_list()[-1]])
 
-def flatten(llist):
+
+# reshapes tensor into ref's shape
+def reconstruct(tensor, ref):
+    return tf.reshape(tensor, ref.get_shape().as_list())
+
+
+# first flattens logits, takes softmax, and reshapes it back
+def softmax(logits, mask):
+    with tf.name_scope("Softmax"):
+        logits = tf.add(logits, (1 - tf.cast(mask, 'float')) * -1e30)
+        flat_logits = flatten(logits)
+        flat_out = tf.nn.softmax(flat_logits)
+        out = reconstruct(flat_out, logits)
+        return out
+
+
+# creates U^tilde and h^tilde in c2q and q2c attention (and later in decode)
+def softsel(target, logits, mask):
+    with tf.name_scope("Softsel"):
+        a = softmax(logits, mask)
+        target_rank = len(target.get_shape().as_list())
+        out = tf.reduce_sum(tf.expand_dims(a, -1) * target, target_rank - 2)
+        return out
+
+
+def unlistify(llist):
     return [item for sublist in llist for item in sublist]
 
 

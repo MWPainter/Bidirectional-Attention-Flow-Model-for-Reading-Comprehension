@@ -10,7 +10,7 @@ from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 from tensorflow.python.ops.rnn_cell import _linear
 from tensorflow.python.ops import variable_scope as vs
-from util import get_sample, get_minibatches, flatten
+from util import get_sample, get_minibatches, unlistify, flatten, reconstruct, softmax, softsel
 from evaluate import exact_match_score, f1_score
 
 logging.basicConfig(level=logging.INFO)
@@ -64,13 +64,13 @@ class Encoder(object):
                 dims = [batch_size, context_paragraph_length, state_size]
         """
 
-        if self.model_name == "BiDAF":
+        if self.model_name == "BiDAF": # step 3 of the paper, question_states is the matrix U, [batch_size, question_max_length, 2d]
             _, question_states = self.build_deep_rnn(question, question_mask, scope="question_BiLSTM", reuse=True)
         else:
             # Build a BiLSTM layer for the question (we only want the concatinated end vectors here)
             question_vector, _ = self.build_deep_rnn(question, question_mask, scope="question_BiLSTM", reuse=True)
 
-        if self.model_name == "BiDAF":
+        if self.model_name == "BiDAF": # step 3 of the paper, for context paragraph, [batch_size, context_paragraph_max_length, 2d]
             context_input = context_paragraph
         else:
             # Concatanate the question vector to every word in the context paragraph, by tiling the question vector and concatinating
@@ -82,7 +82,7 @@ class Encoder(object):
         _, context_states = self.build_deep_rnn(context_input, context_mask, scope="context_BiLSTM", reuse=True)
 
         # Create a 'context' vector from attention
-        if self.model_name == "BiDAF":
+        if self.model_name == "BiDAF": # step 4 of the paper, calling
             attention = self.create_attention_matrix_bidaf(context_states, question_states, context_mask, question_mask, scope="AttentionVector", reuse=True)
         else:
             attention = self.create_attention_context_vector(context_states, question_vector, scope="AttentionVector", reuse=True)
@@ -158,53 +158,46 @@ class Encoder(object):
             result = tf.add(matmul, bias)
         return result
 
-    def flatten(self, tensor, keep):
-        fixed_shape = tensor.get_shape().as_list()
-        start = len(fixed_shape) - keep
-        left = reduce(mul, [fixed_shape[i] or tf.shape(tensor)[i] for i in range(start)])
-        out_shape = [left] + [fixed_shape[i] or tf.shape(tensor)[i] for i in range(start, len(fixed_shape))]
-        flat = tf.reshape(tensor, out_shape)
-        return flat
-
-    def softsel(self, target, logits, mask=None, scope=None):
-        """
-        :param target: [ ..., J, d] dtype=float
-        :param logits: [ ..., J], dtype=float
-        :param mask: [ ..., J], dtype=bool
-        :param scope:
-        :return: [..., d], dtype=float
-        """
-        with tf.name_scope(scope or "Softsel"):
-            a = tf.nn.softmax(logits)
-            target_rank = len(target.get_shape().as_list())
-            out = tf.reduce_sum(tf.expand_dims(a, -1) * target, target_rank - 2)
-            return out
-
 
     def create_attention_matrix_bidaf(self, h, u, h_mask, u_mask, scope="default scope", reuse=False):
+        # h: context paragraph
+        # u: question
+        # h_mask: context mask
+        # u_mask: question mask
+        # last but not least: jigareto
         with tf.variable_scope(scope, reuse):
-            JX = tf.shape(h)[1]
-            JQ = tf.shape(u)[1]
+            JX = tf.shape(h)[1] # paragraph_context_max_length
+            JQ = tf.shape(u)[1] # question_max_length
 
-            h_aug = tf.tile(tf.expand_dims(h, 2), [1, 1, JQ, 1])
-            u_aug = tf.tile(tf.expand_dims(u, 1), [1, JX, 1, 1])
-            
+            # the following two lines augment h and u to make them the same shape
+            h_aug = tf.tile(tf.expand_dims(h, 2), [1, 1, JQ, 1]) # now of shape [batch_size, paragaph_context_max_length, question_max_length, 2d]
+            u_aug = tf.tile(tf.expand_dims(u, 1), [1, JX, 1, 1]) # same
+
+            # same thing here with mask, except that we don't have a vector for each word anymore, just a boolean value
             h_mask_aug = tf.tile(tf.expand_dims(h_mask, 2), [1, 1, JQ])
             u_mask_aug = tf.tile(tf.expand_dims(u_mask, 1), [1, JX, 1])
-            hu_mask = h_mask_aug #& u_mask_aug
+            hu_mask = h_mask_aug & u_mask_aug # now we are anding, element-wise
 
-    	    h_aug_reduced = tf.reduce_sum(tf.reduce_sum(h_aug, axis=3), axis=2)
-    	    u_aug_reduced = tf.reduce_sum(tf.reduce_sum(u_aug, axis=3), axis=2)
-    	    u_aug_reduced.set_shape([None, self.FLAGS.output_size])
-    	    args = [h_aug_reduced, u_aug_reduced, h_aug_reduced * u_aug_reduced] 
-            u_logits = _linear(args, 1, True, bias_start=0, scope="u_logits")
-            #u_logits = tf.add(u_logits, (1 - tf.cast(hu_mask, 'float')) * -1e30)
+            
+            args = [h_aug, u_aug, h_aug * u_aug] # these are the arguments for the function alpha in step 4
 
-            u_a = self.softsel(u_aug, u_logits)  # [N, JX, d]
-            h_a = self.softsel(h, u_logits)  # [N, d]
-            h_a = tf.tile(tf.expand_dims(h_a, 1), [1, JX, 1])
+            # we need to get a linear combination of the args above. we will use function _linear which takes
+            # tensors of rank two. Therefore, we need to flatten these arguments.
+            
+            flat_args = [flatten(arg) for arg in args]
+            
+            # what should the following scope be?
+            flat_out = _linear(flat_args, 1, bias = False, scope = "first") # the flattened version of S in step 4
 
-            p0 = tf.concat(2, [h, u_a, h * u_a, h * h_a])
+            u_logits = reconstruct(flat_out, args[0]) # [N, JX, JQ]
+            u_logits = tf.add(u_logits, (1 - tf.cast(hu_mask, 'float')) * -1e30) # this is now S in step 4
+
+            u_a = softsel(u_aug, u_logits)  # [N, JX, 2d]
+            h_a = softsel(h, tf.reduce_max(u_logits, 2))  # [N, 2d]
+            h_a = tf.tile(tf.expand_dims(h_a, 1), [1, JX, 1]) # [N, JX, 2d]
+
+            p0 = tf.concat(2, [h, u_a, h * u_a, h * h_a]) # [N, JX, 8d]
+            
         return p0
 
 
@@ -283,28 +276,31 @@ class Decoder(object):
         """
         if self.FLAGS.model_name == "BiDAF":
 
-            x_len = tf.shape(context_par_vectors)[1]
             _, g0 = self.build_deep_brnn(attention, context_mask, scope="decode_bilstm_1", reuse=True)
-            _, g1 = self.build_deep_brnn(g0, context_mask, scope="decode_bilstm_2", reuse=True)
+            _, g1 = self.build_deep_brnn(g0, context_mask, scope="decode_bilstm_2", reuse=True) # [N, JX, 2d]
 
-            g1_reduced = tf.reduce_sum(g1, axis=2)
-            att_reduced = tf.reduce_sum(attention, axis=2) 
-            logits = _linear([g1_reduced, att_reduced], self.state_size, True, bias_start=0, scope="logits_1")
-            #logits = tf.add(logits, (1 - tf.cast(context_mask, 'float')) * -1e30)
-            a1i = self.softsel(tf.reshape(g1, [self.FLAGS.batch_size, x_len, 2 * self.state_size]), tf.reshape(logits, [self.FLAGS.batch_size, x_len]))
-            a1i = tf.tile(tf.expand_dims(a1i, 1), [1, x_len, 1])
+            args = [g1, p0]
+            flat_args = [flatten(arg) for arg in args]
+            flat_out = _linear(flat_args, self.state_size, bias = False, scope = "logits1")
+            logits = reconstruct(flat_out, args[0]) # [N, JX, 2d]
+            logits = tf.add(logits, (1 - tf.cast(context_mask, 'float')) * -1e30)
+
+            a1i = softsel(tf.reshape(g1, [self.FLAGS.batch_size, self.FLAGS.context_paragraph_max_length, 2 * self.state_size]), tf.reshape(logits, [self.FLAGS.batch_size, self.FLAGS.context_paragraph_max_length]))
+            a1i = tf.tile(tf.expand_dims(a1i, 1), [1, self.FLAGS.context_paragraph_max_length, 1])
 
             _, g2 = self.build_deep_brnn(tf.concat(2, [attention, g1, a1i, g1 * a1i]), context_mask, scope="decode_bilstm_3", reuse=True)
-	    g2_reduced = tf.reduce_sum(g2, axis=2)
-            logits2 = _linear([g2_reduced, att_reduced], self.state_size, True, bias_start=0, scope="logits_2")
-            #logits2 = tf.add(logits2, (1 - tf.cast(context_mask, 'float')) * -1e30)
-
-            flat_logits = tf.reshape(logits, [-1, x_len])
+            args = [g2, p0]
+            flat_args = [flatten(arg) for arg in args]
+            flat_out = _linear(flat_args, self.state_size, bias = False, scope = "logits2")
+            logits2 = reconstruct(flat_out, args[0]) # [N, JX, 2d]
+            logits2 = tf.add(logits2, (1 - tf.cast(context_mask, 'float')) * -1e30)
+	    
+            flat_logits = tf.reshape(logits, [-1, self.FLAGS.context_paragraph_max_length])
             flat_yp = tf.nn.softmax(flat_logits)  # [-1, JX]
-            start_scores = tf.reshape(flat_yp, [-1, x_len])
-            flat_logits2 = tf.reshape(logits2, [-1, x_len])
+            start_scores = tf.reshape(flat_yp, [-1, self.FLAGS.context_paragraph_max_length])
+            flat_logits2 = tf.reshape(logits2, [-1, self.FLAGS.context_paragraph_max_length])
             flat_yp2 = tf.nn.softmax(flat_logits2)
-            end_scores = tf.reshape(flat_yp2, [-1, x_len])
+            end_scores = tf.reshape(flat_yp2, [-1, self.FLAGS.context_paragraph_max_length])
 
         else:
             attention = tf.expand_dims(attention, 1)
@@ -400,20 +396,6 @@ class Decoder(object):
             matmul = tf.reduce_max(matmul, axis=2) # dim = [batch_size, context_len, 1] -> [batch_size, context_len]
             result = tf.add(matmul, bias)
         return result
-
-    def softsel(self, target, logits, mask=None, scope=None):
-        """
-        :param target: [ ..., J, d] dtype=float
-        :param logits: [ ..., J], dtype=float
-        :param mask: [ ..., J], dtype=bool
-        :param scope:
-        :return: [..., d], dtype=float
-        """
-        with tf.name_scope(scope or "Softsel"):
-            a = tf.nn.softmax(logits)
-            target_rank = len(target.get_shape().as_list())
-            out = tf.reduce_sum(tf.expand_dims(a, -1) * target, target_rank - 2)
-            return out
 
 
     
@@ -668,8 +650,8 @@ class QASystem(object):
         else:
             dataset = get_minibatches(dataset_address, self.FLAGS.context_paragraph_max_length, self.FLAGS.batch_size)
         for question_batch, context_batch, answer_start_batch, answer_end_batch in dataset:
-            answer_start_batch = flatten(answer_start_batch) # batch returns dim=[batch_size,1] need dim=[batch_size,]
-            answer_end_batch = flatten(answer_end_batch) # batch returns dim=[batch_size,1] need dim=[batch_size,]
+            answer_start_batch = unlistify(answer_start_batch) # batch returns dim=[batch_size,1] need dim=[batch_size,]
+            answer_end_batch = unlistify(answer_end_batch) # batch returns dim=[batch_size,1] need dim=[batch_size,]
             input_feed = self.create_feed_dict(question_batch, context_batch, answer_start_batch, answer_end_batch)
             output_feed = [self.updates, self.loss, self.global_grad_norm]
             outputs = session.run(output_feed, feed_dict = input_feed)
@@ -788,8 +770,8 @@ class QASystem(object):
         :return:
         """
         output_feed = [self.loss]     
-        answer_start_batch = flatten(answer_start_batch) # batch returns dim=[batch_size,1] need dim=[batch_size,]
-        answer_end_batch = flatten(answer_end_batch) # batch returns dim=[batch_size,1] need dim=[batch_size,]
+        answer_start_batch = unlistify(answer_start_batch) # batch returns dim=[batch_size,1] need dim=[batch_size,]
+        answer_end_batch = unlistify(answer_end_batch) # batch returns dim=[batch_size,1] need dim=[batch_size,]
         input_feed = self.create_feed_dict(question_batch, context_batch, answer_start_batch, answer_end_batch)
         loss = np.sum(session.run(output_feed, input_feed)) # sessions always return real things
             
