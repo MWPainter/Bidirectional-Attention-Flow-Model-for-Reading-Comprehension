@@ -541,7 +541,6 @@ class QASystem(object):
 		    	l1 = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.a_s, labels=self.answer_start)
 		    	l2 = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.a_e, labels=self.answer_end)
 		    	self.loss = l1 + l2
-            
 
     def setup_optimizer(self):
         optimizer_option = self.FLAGS.optimizer
