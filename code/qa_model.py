@@ -115,7 +115,7 @@ class Encoder(object):
         # fw_outputs, bw_outputs is of dim [batch_size, input_sequence_length, embedding_size], n.b. "input_lengths" below is smaller than "input_sequence_length"
         # we think second output is the ("true") final state, but TF docs are ambiguous AF, so I don't really know. There may be problems here...
         with vs.variable_scope(scope, reuse):
-            input_length = tf.reduce_sum(mask, axis=1) # dim = [batch_size]
+            input_length = tf.reduce_sum(tf.cast(mask, tf.int32), axis=1) # dim = [batch_size]
             (fw_outputs, bw_outputs), _ = tf.nn.bidirectional_dynamic_rnn(self.cell, self.cell, inpt, sequence_length=input_length, dtype=tf.float32, time_major=False) 
             fw_final_state = fw_outputs[:,-1,:]
             bw_final_state = bw_outputs[:,0,:]
@@ -354,7 +354,7 @@ class Decoder(object):
         # fw_outputs, bw_outputs is of dim [batch_size, input_sequence_length, embedding_size], n.b. "input_lengths" below is smaller than "input_sequence_length"
         # we think second output is the ("true") final state, but TF docs are ambiguous AF, so I don't really know. There may be problems here...
         with vs.variable_scope(scope, reuse):
-            input_length = tf.reduce_sum(mask, axis=1) # dim = [batch_size]
+            input_length = tf.reduce_sum(tf.cast(mask, tf.int32), axis=1) # dim = [batch_size]
             (fw_outputs, bw_outputs), _ = tf.nn.bidirectional_dynamic_rnn(self.cell, self.cell, inpt, sequence_length=input_length, dtype=tf.float32, time_major=False) 
             fw_final_state = fw_outputs[:,-1,:]
             bw_final_state = bw_outputs[:,0,:]
