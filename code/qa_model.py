@@ -279,21 +279,21 @@ class Decoder(object):
             _, g0 = self.build_deep_brnn(attention, context_mask, scope="decode_bilstm_1", reuse=True)
             _, g1 = self.build_deep_brnn(g0, context_mask, scope="decode_bilstm_2", reuse=True) # [N, JX, 2d]
 
-            args = [g1, p0]
+            args = [g1, attention]
             flat_args = [flatten(arg) for arg in args]
             flat_out = _linear(flat_args, self.state_size, bias = False, scope = "logits1")
             logits = reconstruct(flat_out, args[0]) # [N, JX, 2d]
-            logits = tf.add(logits, (1 - tf.cast(context_mask, 'float')) * -1e30)
+            logits = tf.add(logits, (1 - tf.cast(tf.expand_dims(context_mask, -1), 'float')) * -1e30)
 
             a1i = softsel(tf.reshape(g1, [self.FLAGS.batch_size, self.FLAGS.context_paragraph_max_length, 2 * self.state_size]), tf.reshape(logits, [self.FLAGS.batch_size, self.FLAGS.context_paragraph_max_length]))
             a1i = tf.tile(tf.expand_dims(a1i, 1), [1, self.FLAGS.context_paragraph_max_length, 1])
 
             _, g2 = self.build_deep_brnn(tf.concat(2, [attention, g1, a1i, g1 * a1i]), context_mask, scope="decode_bilstm_3", reuse=True)
-            args = [g2, p0]
+            args = [g2, attention]
             flat_args = [flatten(arg) for arg in args]
             flat_out = _linear(flat_args, self.state_size, bias = False, scope = "logits2")
             logits2 = reconstruct(flat_out, args[0]) # [N, JX, 2d]
-            logits2 = tf.add(logits2, (1 - tf.cast(context_mask, 'float')) * -1e30)
+            logits2 = tf.add(logits2, (1 - tf.cast(tf.expand_dims(context_mask, -1), 'float')) * -1e30)
 	    
             flat_logits = tf.reshape(logits, [-1, self.FLAGS.context_paragraph_max_length])
             flat_yp = tf.nn.softmax(flat_logits)  # [-1, JX]
@@ -378,7 +378,7 @@ class Decoder(object):
             bw_final_states = []
             states = inpt
             for i in range(self.layers):
-                scope = "rnn_layer_" + str(i)
+                scope = "brnn_layer_" + str(i)
                 (fw_final_state_i, bw_final_state_i), states = self.build_rnn(states, mask, scope=scope, reuse=True)
                 fw_final_states.append(fw_final_state_i)
                 bw_final_states.append(bw_final_state_i)
