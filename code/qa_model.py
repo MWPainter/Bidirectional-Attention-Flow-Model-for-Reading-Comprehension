@@ -467,8 +467,8 @@ class QASystem(object):
         # question, paragraph (context), answer, and dropout placeholders
         self.question_word_ids_placeholder = tf.placeholder(tf.int32, (None, self.FLAGS.question_max_length), name="question_word_ids_placeholder")
         self.context_word_ids_placeholder = tf.placeholder(tf.int32, (None, self.FLAGS.context_paragraph_max_length), name="context_word_ids_placeholder")
-        self.question_mask = tf.sign(self.question_word_ids_placeholder, name ="question_mask")
-        self.context_mask = tf.sign(self.context_word_ids_placeholder, name ="context_mask")
+        self.question_mask = tf.cast(tf.sign(self.question_word_ids_placeholder, name="question_mask"), tf.bool)
+        self.context_mask = tf.cast(tf.sign(self.context_word_ids_placeholder, name ="context_mask"), tf.bool)
         
         self.answer_placeholder = tf.placeholder(tf.int32, (None, 2), name="answer_placeholder")
         
