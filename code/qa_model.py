@@ -12,6 +12,7 @@ from tensorflow.python.ops.rnn_cell import _linear
 from tensorflow.python.ops import variable_scope as vs
 from util import get_sample, get_minibatches, unlistify, flatten, reconstruct, softmax, softsel
 from evaluate import exact_match_score, f1_score
+import pdb
 
 logging.basicConfig(level=logging.INFO)
 
@@ -192,9 +193,14 @@ class Encoder(object):
             u_logits = reconstruct(flat_out, args[0]) # [N, JX, JQ]
             u_logits = tf.add(u_logits, (1 - tf.cast(hu_mask, 'float')) * -1e30) # this is now S in step 4
 
+            print(u_aug)
             u_a = softsel(u_aug, u_logits)  # [N, JX, 2d]
+            print(u_a)
+            print(h)
             h_a = softsel(h, tf.reduce_max(u_logits, 2))  # [N, 2d]
+            print(h_a)
             h_a = tf.tile(tf.expand_dims(h_a, 1), [1, JX, 1]) # [N, JX, 2d]
+            print(h_a)
 
             p0 = tf.concat(2, [h, u_a, h * u_a, h * h_a]) # [N, JX, 8d]
             
@@ -284,9 +290,13 @@ class Decoder(object):
             flat_out = _linear(flat_args, self.state_size, bias = False, scope = "logits1")
             logits = reconstruct(flat_out, args[0]) # [N, JX, 2d]
             logits = tf.add(logits, (1 - tf.cast(tf.expand_dims(context_mask, -1), 'float')) * -1e30)
-
+            
+            print(g1)
+            print(logits)
             a1i = softsel(tf.reshape(g1, [self.FLAGS.batch_size, self.FLAGS.context_paragraph_max_length, 2 * self.state_size]), tf.reshape(logits, [self.FLAGS.batch_size, self.FLAGS.context_paragraph_max_length]))
+            print(a1i)
             a1i = tf.tile(tf.expand_dims(a1i, 1), [1, self.FLAGS.context_paragraph_max_length, 1])
+            print(a1i)
 
             _, g2 = self.build_deep_brnn(tf.concat(2, [attention, g1, a1i, g1 * a1i]), context_mask, scope="decode_bilstm_3", reuse=True)
             args = [g2, attention]
@@ -302,7 +312,7 @@ class Decoder(object):
             flat_yp2 = tf.nn.softmax(flat_logits2)
             yp2 = tf.reshape(flat_yp2, [-1, self.FLAGS.context_paragraph_max_length])
 
-            return flat_logits, flat_logits2, yp, yp2
+            return logits, logits2, yp, yp2
 
         else:
             attention = tf.expand_dims(attention, 1)
@@ -529,23 +539,30 @@ class QASystem(object):
         """
         with vs.variable_scope("loss"):
 	    if self.FLAGS.model_name == "BiDAF":
+
+                self.logits = tf.reduce_mean(self.logits, 2)
+                self.logits2 = tf.reduce_mean(self.logits2, 2)
 		JX = self.FLAGS.context_paragraph_max_length
-		loss_mask = tf.reduce_max(tf.cast(self.question_mask, 'float'), 1)
-		losses = tf.nn.softmax_cross_entropy_with_logits(self.logits, tf.cast(tf.reshape(self.answer_start, [-1, JX]), 'float'))
-		ce_loss = tf.reduce_mean(loss_mask * losses)
-		tf.add_to_collection('losses', ce_loss)
-		ce_loss2 = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(self.logits2, tf.cast(tf.reshape(self.answer_end, [-1, JX]), 'float')))
-		tf.add_to_collection('losses', ce_loss2)
+		#loss_mask = tf.reduce_max(tf.cast(self.question_mask, 'float'), 1)
+		ce_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(self.logits, self.answer_start)
+		#tf.add_to_collection('losses', ce_loss)
+		ce_loss2 = tf.nn.sparse_softmax_cross_entropy_with_logits(self.logits2, self.answer_end)
+		#tf.add_to_collection('losses', ce_loss2)
 		self.loss = tf.add_n([ce_loss, ce_loss2])
+		print(self.loss.get_shape())
 	    else:
 		l1 = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.a_s, labels=self.answer_start)
 		l2 = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.a_e, labels=self.answer_end)
 		self.loss = l1 + l2
+		print(self.a_s.get_shape())
+		print(l1.get_shape())
 
     def setup_optimizer(self):
         optimizer_option = self.FLAGS.optimizer
         optimizer = get_optimizer(optimizer_option)(self.FLAGS.learning_rate)
 
+ 
+        pdb.set_trace()
         grads = optimizer.compute_gradients(self.loss)
         only_grads = [grad[0] for grad in grads]
         only_vars = [grad[1] for grad in grads]

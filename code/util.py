@@ -24,9 +24,11 @@ def get_minibatches(data, minibatch_size, shuffle=True):
 # flattens tensor of shape [..., d] into [x, d] where x is the product of ...
 def flatten(tensor):
     fixed_shape = tensor.get_shape().as_list()
-    start = len(fixed_shape) - 1
-    left = reduce(mul, [fixed_shape[i] or tf.shape(tensor)[i] for i in range(start)])
-    out_shape = [left] + [fixed_shape[i] or tf.shape(tensor)[i] for i in range(start, len(fixed_shape))]
+    tensor_rank = len(fixed_shape) 
+    flatten_dim = reduce(mul, [fixed_shape[i] or tf.shape(tensor)[i] for i in range(1,tensor_rank)])
+    minibatch_size = fixed_shape[0] or tf.shape(tensor)[0]
+    out_shape = [minibatch_size, flatten_dim]
+    #out_shape = [left] + [fixed_shape[i] or tf.shape(tenor)[i] for i in range(start, len(fixed_shape))]    
     flat = tf.reshape(tensor, out_shape)
     return flat
 #def flatten(tensor):
@@ -35,6 +37,11 @@ def flatten(tensor):
 
 # reshapes tensor into ref's shape
 def reconstruct(tensor, ref):
+    shape = ref.get_shape().as_list() # will be none in the minibatch dim
+    shape[0] = -1 # want -1 rather than none, so it fills correctly
+    reshaped = tf.reshape(tensor, shape)
+    return reshaped
+    """
     ref_shape = ref.get_shape().as_list()
     tensor_shape = tensor.get_shape().as_list()
     ref_stop = len(ref_shape) - 1
@@ -50,15 +57,22 @@ def reconstruct(tensor, ref):
     return out
 #def reconstruct(tensor, ref):
 #    return tf.reshape(tensor, ref.get_shape().as_list())
+    """
 
 
 # first flattens logits, takes softmax, and reshapes it back
 def softmax(logits):
     with tf.name_scope("Softmax"):
         flat_logits = flatten(logits)
+        #logits_shape = logits.get_shape().as_list()
+        #flat_dim = np.prod(logits_shape[1:])
+        #flat_logits = tf.reshape(logits, [-1, flat_dim])
         flat_out = tf.nn.softmax(flat_logits)
         out = reconstruct(flat_out, logits)
+        #logits_shape[0] = -1 # would be None when read shape, BUT, need as -1 when inputting into reshape
+        #out = tf.reshape(flat_logits, logits_shape)
         return out
+
 
 
 # creates U^tilde and h^tilde in c2q and q2c attention (and later in decode)
