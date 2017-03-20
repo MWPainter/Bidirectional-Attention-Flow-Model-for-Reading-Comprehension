@@ -135,7 +135,7 @@ def get_minibatches(dataset_address, max_context_length, minibatch_size = 100):
 
 
 
-def get_sample(dataset_address, max_context_length, sample_size=100): 
+def get_sample(dataset_address, max_context_length, sample_size): 
     
     data_size = sum(1 for line in open(dataset_address + ".span"))
 

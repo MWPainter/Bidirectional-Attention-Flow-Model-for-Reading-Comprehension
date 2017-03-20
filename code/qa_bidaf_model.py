@@ -12,7 +12,7 @@ from tensorflow.python.ops.rnn_cell import _linear
 from tensorflow.python.ops import variable_scope as vs
 from util import get_sample, get_minibatches, unlistify, flatten, reconstruct, softmax, softsel
 from evaluate import exact_match_score, f1_score
-import pdb
+import math
 
 logging.basicConfig(level=logging.INFO)
 
@@ -31,12 +31,12 @@ def get_optimizer(opt):
 
 
 
-def build_birnn(fw_cell, bw_cell, inpt, mask, scope="default_scope"):
+def build_birnn(cell, inpt, mask, scope="default_scope"):
     """
     Helper function to build a rolled out rnn. We need the mask to tell tf how far to roll out the network
         
-    :param fw_cell: The rnn cell to use for the forward network
-    :param bw_cell: The rnn cell to use for the backward network
+    :param cell: The rnn cell to use for the forward network
+    :param cell: The rnn cell to use for the backward network
     :param inpt: input to the rnn, should be a tf.placeholder/tf.variable
         Dims: [batch_size, input_sequence_length, embedding_size], input_sequence_length is the question/context_paragraph length
     :param mask: a tf.variable for the mask of the input, if there is a 0 in this, then the corresponding word is a <pad>
@@ -53,9 +53,9 @@ def build_birnn(fw_cell, bw_cell, inpt, mask, scope="default_scope"):
     # build the dynamic_rnn, compute lengths of the sentences (using mask) so tf knows how far it needs to roll out rnn
     # fw_outputs, bw_outputs is of dim [batch_size, input_sequence_length, embedding_size], n.b. "input_lengths" below is smaller than "input_sequence_length"
     # we think second output is the ("true") final state, but TF docs are ambiguous AF, so I don't really know. There may be problems here...
-    with vs.variable_scope(scope, True):
+    with tf.variable_scope(scope):
         input_length = tf.reduce_sum(tf.cast(mask, tf.int32), axis=1)
-        (fw_outputs, bw_outputs), _ = tf.nn.bidirectional_dynamic_rnn(fw_cell, bw_cell, inpt, sequence_length=input_length, dtype=tf.float32, time_major=False, scope=scope) 
+        (fw_outputs, bw_outputs), _ = tf.nn.bidirectional_dynamic_rnn(cell, cell, inpt, sequence_length=input_length, dtype=tf.float32, time_major=False) 
         fw_final_state = fw_outputs[:,-1,:]
         bw_final_state = bw_outputs[:,0,:]
         state_history = tf.concat(2, [fw_outputs, bw_outputs])
@@ -63,7 +63,7 @@ def build_birnn(fw_cell, bw_cell, inpt, mask, scope="default_scope"):
 
 
 
-def build_deep_birnn(fw_cell, bw_cell, inpt, mask, layers, scope="default_scope"):
+def build_deep_birnn(cell, inpt, mask, layers, scope="default_scope"):
     """
     Use build_rnn to build a rolled out RNN, using the cell of type self.cell
     We will make this 'self.layers' layers deep
@@ -73,13 +73,13 @@ def build_deep_birnn(fw_cell, bw_cell, inpt, mask, layers, scope="default_scope"
     So if the forward final states are f1, ..., fn and backward are b1, ..., bn if there are n layers, then the single vector representation is
     [f1; ...; fn; b1; ...; bn]
     """
-    with vs.variable_scope(scope, True):
+    with tf.variable_scope(scope):
         fw_final_states = []
         bw_final_states = []
         states = inpt
         for i in range(layers):
             scope = "birnn_layer_" + str(i)
-            (fw_final_state_i, bw_final_state_i), states = build_birnn(fw_cell, bw_cell, inpt, mask, scope=scope)
+            (fw_final_state_i, bw_final_state_i), states = build_birnn(cell, inpt, mask, scope=scope)
             fw_final_states.append(fw_final_state_i)
             bw_final_states.append(bw_final_state_i)
         final_representation = tf.concat(1, fw_final_states + bw_final_states)
@@ -92,11 +92,8 @@ class BidafEncoder(object):
     def __init__(self, state_size, embedding_dim, dropout_prob):
         self.state_size = state_size
         self.embedding_dim = embedding_dim # the dimension of the word embeddings
-        self.dropout_prob = tf.constant(dropout_prob)
-        with vs.variable_scope("forward", True):
-            self.fw_cell = tf.nn.rnn_cell.BasicLSTMCell(self.state_size)
-        with vs.variable_scope("backward", True):
-            self.bw_cell = tf.nn.rnn_cell.BasicLSTMCell(self.state_size)
+        self.dropout_prob = dropout_prob
+        self.cell = tf.nn.rnn_cell.BasicLSTMCell(self.state_size)
         self.FLAGS = tf.app.flags.FLAGS # Get a link to tf.app.flags
 
     def encode(self, question, question_mask, context_paragraph, context_mask):
@@ -119,8 +116,8 @@ class BidafEncoder(object):
         """
 
         # Pass question and context sentence (representations) through a BiLSTM layer (seperate)
-        _, question_states = build_deep_birnn(self.fw_cell, self.bw_cell, question, question_mask, layers=1, scope="question_BiLSTM")
-        _, context_states = build_deep_birnn(self.fw_cell, self.bw_cell, context_paragraph, context_mask, layers=1, scope="context_BiLSTM")
+        _, question_states = build_deep_birnn(self.cell, question, question_mask, layers=1, scope="question_BiLSTM")
+        _, context_states = build_deep_birnn(self.cell, context_paragraph, context_mask, layers=1, scope="context_BiLSTM")
 
         # Generate the similarity matrix
         # Part one of attention
@@ -146,7 +143,7 @@ class BidafEncoder(object):
         :param question_states: U from paper, dims = [batch_size, J, 2d]
         :return: Similarity matrix. S from paper. dims = [batch_size, T, J]
         """
-        with vs.variable_scope("similarity_matrix"):
+        with tf.variable_scope("similarity_matrix"):
             # Create a matrix hu with dims [batch_size, T, J, 6d], 
             # [H_t; U_j; H_t o U_j] from the paper
             T = tf.shape(context_states)[1]
@@ -160,7 +157,7 @@ class BidafEncoder(object):
             # Create the weights (dims=[1,1,6d]) to learn for the similarity function + tile to make it of dimension [T, J, 6d]
             weights_size = self.state_size * 6 # 6d
             weights = tf.get_variable("weights", shape=(1,1,weights_size), dtype=tf.float32, initializer=tf.contrib.layers.xavier_initializer()) # dims = [1,1,6d]
-            weights = tf.nn.dropout(weights, self.dropout)
+            weights = tf.nn.dropout(weights, 1.0 - self.dropout_prob)
             weights = tf.tile(weights, [T, J, 1]) # dims = [T, J, 6d]
 
             # Compute the final similarity matrix using:
@@ -185,7 +182,7 @@ class BidafEncoder(object):
         :param question_states: U in the paper. dims = [batch_size, J, 2d]
         :output: U_tilde in the paper. [batch_size, T, 2d]
         """
-        with vs.variable_scope("context_to_query"):
+        with tf.variable_scope("context_to_query"):
             # Compute attentions. This is softmax over similarity (S) in the 2nd dimension
             # dims = [batch_size, T, J]
             attentions = tf.nn.softmax(similarity) #, dim=2) # can't specify dim=<last_dim>, because who wants code readability???
@@ -218,7 +215,7 @@ class BidafEncoder(object):
         :param context_states: U in the paper. dims = [batch_size, T, 2d]
         :return: H_tilde in the paper. dims = [batch_size, T, 2d]
         """
-        with vs.variable_scope("query_to_context"):
+        with tf.variable_scope("query_to_context"):
             # Take max per column (actually column, as we DO have a TxJ matrix) 
             # Then run it through a softmax to get our softmax scores
             similarity_col_max = tf.reduce_max(similarity, axis=2) # dim = [batch_size, T].
@@ -251,7 +248,7 @@ class BidafEncoder(object):
         :param query_to_context: H_tilde from the paper. dim = [batch_size, T, 2d]
         :return: [H; U_tilde; H o U_tilde; H o H_tilde] from the paper. dim = [batch_size, T, 8d]
         """
-        with vs.variable_scope("final_attention"):
+        with tf.variable_scope("final_attention"):
             HU_tilde = tf.multiply(context_states, context_to_query)
             HH_tilde = tf.multiply(context_states, query_to_context)
             question_aware_context_states = tf.concat(2, [context_states, context_to_query, HU_tilde, HH_tilde])
@@ -262,11 +259,8 @@ class BidafEncoder(object):
 class BidafDecoder(object):
     def __init__(self, state_size, dropout_prob):
         self.state_size = state_size
-        with vs.variable_scope("forward", True):
-            self.fw_cell = tf.nn.rnn_cell.BasicLSTMCell(self.state_size)
-        with vs.variable_scope("backward", True):
-            self.bw_cell = tf.nn.rnn_cell.BasicLSTMCell(self.state_size)
-        self.dropout_prob = tf.constant(dropout_prob)
+        self.cell = tf.nn.rnn_cell.BasicLSTMCell(self.state_size)
+        self.dropout_prob = dropout_prob
         self.FLAGS = tf.app.flags.FLAGS # Get a link to tf.app.flags  
 
     def decode(self, question_aware_context_states, mask):
@@ -277,12 +271,12 @@ class BidafDecoder(object):
         :return: A probability distribution over the context paragraph for where the beginning and end of the answer is
         """
 
-        with vs.variable_scope("decode", True):
+        with tf.variable_scope("decode"):
             # M^1 from the paper        
-            _, M1 = build_deep_birnn(self.fw_cell, self.bw_cell, question_aware_context_states, mask, layers=2, scope="Model_Layer") # dim = [batch_size, T, 2d]
+            _, M1 = build_deep_birnn(self.cell, question_aware_context_states, mask, layers=2, scope="Model_Layer") # dim = [batch_size, T, 2d]
 
             # M^2 from paper
-            _, M2 = build_deep_birnn(self.fw_cell, self.bw_cell, M1, mask, layers=1, scope="Model_Layer_2") # dim = [batch_size, T, 2d]
+            _, M2 = build_deep_birnn(self.cell, M1, mask, layers=1, scope="Model_Layer_2") # dim = [batch_size, T, 2d]
 
             # Compute GM^1 from paper and GM^2 from paper
             GM1 = tf.concat(2, [question_aware_context_states, M1]) # dim = [batch_size, T, 10d]
@@ -292,11 +286,11 @@ class BidafDecoder(object):
             T = tf.shape(question_aware_context_states)[1] 
             tend = 10 * self.state_size # got lazy, not calculating it from the inputs
             weights_beg = tf.get_variable("weights_beg", shape=(1,tend), dtype=tf.float32, initializer=tf.contrib.layers.xavier_initializer()) # dims = [1,10d]
-            weights_beg = tf.nn.dropout(weights_beg, self.dropout)
+            weights_beg = tf.nn.dropout(weights_beg, 1.0 - self.dropout_prob)
             weights_beg = tf.tile(weights_beg, [T, 1]) # dim = [T,10d]
             weights_end = tf.get_variable("weights_end", shape=(1,tend), dtype=tf.float32, initializer=tf.contrib.layers.xavier_initializer()) # dims = [1,10d]
             weights_end = tf.tile(weights_beg, [T, 1]) # dim = [T,10d]
-            weights_end = tf.nn.dropout(weights_end, self.dropout)
+            weights_end = tf.nn.dropout(weights_end, 1.0 - self.dropout_prob)
 
             # Compute logits (using broadcasting to multiply)
             to_sum_beg = tf.multiply(weights_beg, GM1) # dim = [batch_size, T, 10d]
@@ -348,10 +342,12 @@ class BidafQASystem(object):
         self.answer_placeholder = tf.placeholder(tf.int32, (None, 2), name="answer_placeholder")
         
         # ==== assemble pieces ====
-        with tf.variable_scope("qa", initializer=tf.uniform_unit_scaling_initializer(1.0)):
-            self.setup_embeddings()
-            self.setup_system()
-            self.setup_loss()
+        #with tf.variable_scope("qa", initializer=tf.uniform_unit_scaling_initializer(1.0)):
+        print("d")
+        print(tf.get_variable_scope())
+        self.setup_embeddings()
+        self.setup_system()
+        self.setup_loss()
 
         # ==== set up training/updating procedure ====
         params = tf.trainable_variables()
@@ -418,7 +414,7 @@ class BidafQASystem(object):
         Set up your loss computation here
         :return:
         """
-        with vs.variable_scope("loss"):
+        with tf.variable_scope("loss"):
             predict_beg_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(self.predict_beg, self.answer_start)
             predict_end_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(self.predict_end, self.answer_end)
             self.loss = tf.add(predict_beg_loss, predict_end_loss)
@@ -452,7 +448,7 @@ class BidafQASystem(object):
         Loads distributed word representations based on placeholder tokens
         :return:
         """
-        with vs.variable_scope("embeddings"):
+        with tf.variable_scope("embeddings"):
             #glove_matrix = np.load()['glove']
             #params = tf.constant(glove_matrix) # if you wanna train the embeddings too, put it in a variable (inside the init function)
             self.question_var = tf.nn.embedding_lookup(self.embeddings, self.question_word_ids_placeholder)
@@ -484,10 +480,27 @@ class BidafQASystem(object):
         
         f1 = 0.
         em = 0.
-        dataset, num_samples = get_sample(dataset_address, self.FLAGS.context_paragraph_max_length, sample)
+        dataset, num_samples = get_sample(dataset_address, self.FLAGS.context_paragraph_max_length, sample) # gets 100 samples
         test_questions, test_paragraphs, test_start_answers, test_end_answers = dataset
-        predictions = self.answer(session, test_paragraphs, test_questions)
-        for i in range(num_samples):
+
+        # need to split the samples testing into a reasonable workload, so that we can fit each prediction batch into memory
+        predictions = []
+	num_minibatches = int(math.ceil(num_samples / self.FLAGS.batch_size)) # integer div, rounding up
+	for i in range(num_minibatches): # would be nice to have this as "for question, paragraph, start, end in dataset" (TODO: when clean code up)
+            paragraphs = []
+            questions = []
+            beg_pos = i * self.FLAGS.batch_size
+            end_pos = beg_pos + self.FLAGS.batch_size
+            if i == num_minibatches - 1:
+                paragraphs = test_paragraphs[beg_pos:]
+                questions = test_questions[beg_pos:]
+            else: 
+                paragraphs = test_paragraphs[beg_pos:end_pos]
+                questions = test_questions[beg_pos:end_pos]
+            print(len(paragraphs))
+            predictions += self.answer(session, paragraphs, questions)
+
+        for i in range(num_samples): # num_samples = number of samples in dataset, it's not necessarily 100, as we cut out things we couldn't predict 
             answer_beg = test_start_answers[i][0] # this is a list of length 1
             answer_end = test_end_answers[i][0] # same
             answer_str_list = [str(test_paragraphs[i][j]) for j in range(answer_beg, answer_end+1)]
@@ -522,18 +535,12 @@ class BidafQASystem(object):
     # this function is only called by answer above. returns probabilities for the start and end words
     
     def predict(self, session, test_paragraph, test_question):
-        with tf.variable_scope("qa", True):
-            input_feed = {}
-            """
-            could we just have the following?
-            input_feed = create_feed_dict(test_paragraph, test_question)
-            """
-            #input_feed[self.context_var] = test_paragraph
-            #input_feed[self.question_var] = test_question
-            input_feed = self.create_feed_dict(test_question, test_paragraph)
-            output_feed = [self.predict_beg_probs, self.predict_end_probs]
-            outputs = session.run(output_feed, feed_dict = input_feed)
-            return outputs    
+        #with tf.variable_scope("qa"):
+        print(tf.get_variable_scope())
+        input_feed = self.create_feed_dict(test_question, test_paragraph)
+        output_feed = [self.predict_beg_probs, self.predict_end_probs]
+        outputs = session.run(output_feed, feed_dict = input_feed)
+        return outputs    
 
 
     def optimize(self, session, dataset_address):
@@ -550,18 +557,21 @@ class BidafQASystem(object):
         else:
             dataset = get_minibatches(dataset_address, self.FLAGS.context_paragraph_max_length, self.FLAGS.batch_size)
 
-        with vs.variable_scope("qa", True):
-            for question_batch, context_batch, answer_start_batch, answer_end_batch in dataset:
-                answer_start_batch = unlistify(answer_start_batch) # batch returns dim=[batch_size,1] need dim=[batch_size,]
-                answer_end_batch = unlistify(answer_end_batch) # batch returns dim=[batch_size,1] need dim=[batch_size,]
-                input_feed = self.create_feed_dict(question_batch, context_batch, answer_start_batch, answer_end_batch)
-                output_feed = [self.updates, self.loss, self.global_grad_norm]
-                outputs = session.run(output_feed, feed_dict = input_feed)
-                #loss += outputs[1]
-                global_grad_norm = outputs[2]
-                counter = (counter + 1) % self.FLAGS.print_every
-                if counter == 0:
-                    logging.info("Global grad norm for update: {}".format(global_grad_norm))
+        #with tf.variable_scope("qa"):
+        #tf.get_variable_scope().reuse_variables()
+        print("o")
+        print(tf.get_variable_scope())
+        for question_batch, context_batch, answer_start_batch, answer_end_batch in dataset:
+            answer_start_batch = unlistify(answer_start_batch) # batch returns dim=[batch_size,1] need dim=[batch_size,]
+            answer_end_batch = unlistify(answer_end_batch) # batch returns dim=[batch_size,1] need dim=[batch_size,]
+            input_feed = self.create_feed_dict(question_batch, context_batch, answer_start_batch, answer_end_batch)
+            output_feed = [self.updates, self.loss, self.global_grad_norm]
+            outputs = session.run(output_feed, feed_dict = input_feed)
+            #loss += outputs[1]
+            global_grad_norm = outputs[2]
+            counter = (counter + 1) % self.FLAGS.print_every
+            if counter == 0:
+                logging.info("Global grad norm for update: {}".format(global_grad_norm))
 
 
 
@@ -602,6 +612,9 @@ class BidafQASystem(object):
         toc = time.time()
         logging.info("Number of params: %d (retreival took %f secs)" % (num_params, toc - tic))
 
+        # Set reuse of variables up
+        tf.get_variable_scope().reuse_variables()
+
         # Make files to append the scores as we get them
         training_scores_filename = train_dir + "/training_scores.txt"
         validation_scores_filename = train_dir + "/validation_scores.txt"
@@ -620,6 +633,8 @@ class BidafQASystem(object):
             self.saver.save(session, train_dir + "/model_params", global_step=e_proper)
             val_loss = self.validate(session, val_dataset_address)
 
+            print(train_dataset_address)
+            print(val_dataset_address)
             f1_train, em_train = self.evaluate_answer(session, train_dataset_address, 100, True) # doing this cuz we wanna make sure it at least works well for the stuff it's already seen
             f1_val, em_val = self.evaluate_answer(session, val_dataset_address, 100, True)
             

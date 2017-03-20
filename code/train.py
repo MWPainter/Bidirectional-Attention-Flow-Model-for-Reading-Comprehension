@@ -19,8 +19,8 @@ logging.basicConfig(level=logging.INFO)
 tf.app.flags.DEFINE_float("learning_rate", 0.01, "Learning rate.")
 tf.app.flags.DEFINE_float("max_gradient_norm", 10.0, "Clip gradients to this norm.")
 tf.app.flags.DEFINE_float("dropout", 0.15, "Fraction of units randomly dropped on non-recurrent connections.")
-tf.app.flags.DEFINE_integer("batch_size", 32, "Batch size to use during training.")
-tf.app.flags.DEFINE_integer("epochs", 10, "Number of epochs to train.")
+tf.app.flags.DEFINE_integer("batch_size", 24, "Batch size to use during training.")
+tf.app.flags.DEFINE_integer("epochs", 30, "Number of epochs to train.")
 tf.app.flags.DEFINE_integer("state_size", 50, "Size of each model layer.")
 tf.app.flags.DEFINE_integer("output_size", 300, "The output size of your model.")
 tf.app.flags.DEFINE_integer("embedding_size", 100, "Size of the pretrained vocabulary.")
@@ -35,13 +35,13 @@ tf.app.flags.DEFINE_integer("print_every", 100, "How many iterations to do per p
 tf.app.flags.DEFINE_integer("keep", 0, "How many checkpoints to keep, 0 indicates keep all.")
 tf.app.flags.DEFINE_string("vocab_path", "data/squad/vocab.dat", "Path to vocab file (default: ./data/squad/vocab.dat)")
 tf.app.flags.DEFINE_string("embed_path", "", "Path to the trimmed GLoVe embedding (default: ./data/squad/glove.trimmed.{embedding_size}.npz)")
-tf.app.flags.DEFINE_boolean("debug", True, "Are we debugging?")
+tf.app.flags.DEFINE_boolean("debug", False, "Are we debugging?")
 tf.app.flags.DEFINE_integer("debug_training_size", 100, "A smaller training size for debugging, so that epochs are quick, and we can test logging etc")
 tf.app.flags.DEFINE_boolean("log_score", True, "If we want to log f1 and em score in a txt file, alongside the model params in the pa4/train/<model_name> directory")
 tf.app.flags.DEFINE_string("model_name", "BiDAF", "The model to use, pick from: 'baseline', 'embedding_backprop', 'deep_encoder_2layer', 'deep_encoder_3layer', 'deep_decoder_2layer', 'deep_decoder_3layer', 'QRNNs', 'BiDAF'")
 tf.app.flags.DEFINE_string("model_version", "", "Make this '' for initial model, if we ever want to retrain a model, then we can use this (with '_i') to not overwrite the original data")
 tf.app.flags.DEFINE_boolean("clip_norms", True, "Do we wish to clip norms?")
-tf.app.flags.DEFINE_string("train_prefix", "train", "Prefix of all the training data files")
+tf.app.flags.DEFINE_string("train_prefix", "train.short", "Prefix of all the training data files")
 tf.app.flags.DEFINE_string("val_prefix", "val", "Prefix of all the validation data files")
 tf.app.flags.DEFINE_integer("epoch_base", 0, "The first epoch, so that we are saving the correct model and outputting the correct numbers if we restarted")
 
@@ -115,7 +115,7 @@ def main(_):
         decoder_layers = 3 
     elif FLAGS.model_name == "BiDAF":
         # do nothing
-	    pass
+        pass
     elif not (FLAGS.model_name == "baseline"): 
         raise Exception("Invalid model name selected")
 
@@ -123,7 +123,8 @@ def main(_):
     #train_dataset = load_dataset(FLAGS.data_dir, "train")
     #val_dataset = load_dataset(FLAGS.data_dir, "val")
     train_dataset_address = FLAGS.data_dir + "/" + FLAGS.train_prefix 
-    val_dataset_address = FLAGS.data_dir + "/" + FLAGS.val_prefix 
+    val_dataset_address = FLAGS.data_dir + "/" + FLAGS.train_prefix 
+    #val_dataset_address = FLAGS.data_dir + "/" + FLAGS.val_prefix 
     
     embed_path = FLAGS.embed_path or pjoin("data", "squad", "glove.trimmed.{}.npz".format(FLAGS.embedding_size))
     vocab_path = FLAGS.vocab_path or pjoin(FLAGS.data_dir, "vocab.dat")
