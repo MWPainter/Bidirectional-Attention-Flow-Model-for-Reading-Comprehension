@@ -18,6 +18,7 @@ from qa_model import Encoder, QASystem, Decoder
 from preprocessing.squad_preprocess import data_from_json, maybe_download, squad_base_url, \
     invert_map, tokenize, token_idx_map
 import qa_data
+from qa_bidaf_model import BidafEncoder, BidafQASystem, BidafDecoder
 
 import logging
 
@@ -25,19 +26,48 @@ logging.basicConfig(level=logging.INFO)
 
 FLAGS = tf.app.flags.FLAGS
 
-tf.app.flags.DEFINE_float("learning_rate", 0.001, "Learning rate.")
+# tf.app.flags.DEFINE_float("learning_rate", 0.001, "Learning rate.")
+# tf.app.flags.DEFINE_float("dropout", 0.15, "Fraction of units randomly dropped on non-recurrent connections.")
+# tf.app.flags.DEFINE_integer("batch_size", 10, "Batch size to use during training.")
+# tf.app.flags.DEFINE_integer("epochs", 0, "Number of epochs to train.")
+# tf.app.flags.DEFINE_integer("state_size", 200, "Size of each model layer.")
+# tf.app.flags.DEFINE_integer("embedding_size", 100, "Size of the pretrained vocabulary.")
+# tf.app.flags.DEFINE_integer("output_size", 750, "The output size of your model.")
+# tf.app.flags.DEFINE_integer("keep", 0, "How many checkpoints to keep, 0 indicates keep all.")
+# tf.app.flags.DEFINE_string("train_dir", "train", "Training directory (default: ./train).")
+# tf.app.flags.DEFINE_string("log_dir", "log", "Path to store log and flag files (default: ./log)")
+# tf.app.flags.DEFINE_string("vocab_path", "data/squad/vocab.dat", "Path to vocab file (default: ./data/squad/vocab.dat)")
+# tf.app.flags.DEFINE_string("embed_path", "", "Path to the trimmed GLoVe embedding (default: ./data/squad/glove.trimmed.{embedding_size}.npz)")
+tf.app.flags.DEFINE_string("dev_path", "data/squad/dev-v1.1.json", "Path to the JSON dev set to evaluate against (default: ./data/squad/dev-v1.1.json)")
+
+tf.app.flags.DEFINE_float("learning_rate", 0.01, "Learning rate.")
+tf.app.flags.DEFINE_float("max_gradient_norm", 10.0, "Clip gradients to this norm.")
 tf.app.flags.DEFINE_float("dropout", 0.15, "Fraction of units randomly dropped on non-recurrent connections.")
-tf.app.flags.DEFINE_integer("batch_size", 10, "Batch size to use during training.")
-tf.app.flags.DEFINE_integer("epochs", 0, "Number of epochs to train.")
-tf.app.flags.DEFINE_integer("state_size", 200, "Size of each model layer.")
+tf.app.flags.DEFINE_integer("batch_size", 24, "Batch size to use during training.")
+tf.app.flags.DEFINE_integer("epochs", 30, "Number of epochs to train.")
+tf.app.flags.DEFINE_integer("state_size", 50, "Size of each model layer.")
+tf.app.flags.DEFINE_integer("output_size", 300, "The output size of your model.")
 tf.app.flags.DEFINE_integer("embedding_size", 100, "Size of the pretrained vocabulary.")
-tf.app.flags.DEFINE_integer("output_size", 750, "The output size of your model.")
-tf.app.flags.DEFINE_integer("keep", 0, "How many checkpoints to keep, 0 indicates keep all.")
-tf.app.flags.DEFINE_string("train_dir", "train", "Training directory (default: ./train).")
+tf.app.flags.DEFINE_integer("question_max_length", 100, "Maximum length of an input question.")
+tf.app.flags.DEFINE_integer("context_paragraph_max_length", 300, "Maximum length of a context paragraph.")
+tf.app.flags.DEFINE_string("data_dir", "data/squad", "SQuAD directory (default ./data/squad)")
+tf.app.flags.DEFINE_string("train_dir", "train", "Training directory to save the model parameters (default: ./train), it will use the model name as a second directory.")
+tf.app.flags.DEFINE_string("load_train_dir", "", "Training directory to load model parameters from to resume training (default: {train_dir}).")
 tf.app.flags.DEFINE_string("log_dir", "log", "Path to store log and flag files (default: ./log)")
+tf.app.flags.DEFINE_string("optimizer", "adam", "adam / sgd")
+tf.app.flags.DEFINE_integer("print_every", 100, "How many iterations to do per print.") # want to print every 1000 examples (so approx 100 times per epoch)
+tf.app.flags.DEFINE_integer("keep", 0, "How many checkpoints to keep, 0 indicates keep all.")
 tf.app.flags.DEFINE_string("vocab_path", "data/squad/vocab.dat", "Path to vocab file (default: ./data/squad/vocab.dat)")
 tf.app.flags.DEFINE_string("embed_path", "", "Path to the trimmed GLoVe embedding (default: ./data/squad/glove.trimmed.{embedding_size}.npz)")
-tf.app.flags.DEFINE_string("dev_path", "data/squad/dev-v1.1.json", "Path to the JSON dev set to evaluate against (default: ./data/squad/dev-v1.1.json)")
+tf.app.flags.DEFINE_boolean("debug", False, "Are we debugging?")
+tf.app.flags.DEFINE_integer("debug_training_size", 100, "A smaller training size for debugging, so that epochs are quick, and we can test logging etc")
+tf.app.flags.DEFINE_boolean("log_score", True, "If we want to log f1 and em score in a txt file, alongside the model params in the pa4/train/<model_name> directory")
+tf.app.flags.DEFINE_string("model_name", "BiDAF", "The model to use, pick from: 'baseline', 'embedding_backprop', 'deep_encoder_2layer', 'deep_encoder_3layer', 'deep_decoder_2layer', 'deep_decoder_3layer', 'QRNNs', 'BiDAF'")
+tf.app.flags.DEFINE_string("model_version", "", "Make this '' for initial model, if we ever want to retrain a model, then we can use this (with '_i') to not overwrite the original data")
+tf.app.flags.DEFINE_boolean("clip_norms", True, "Do we wish to clip norms?")
+tf.app.flags.DEFINE_string("train_prefix", "train.short", "Prefix of all the training data files")
+tf.app.flags.DEFINE_string("val_prefix", "val", "Prefix of all the validation data files")
+tf.app.flags.DEFINE_integer("epoch_base", 0, "The first epoch, so that we are saving the correct model and outputting the correct numbers if we restarted")
 
 def initialize_model(session, model, train_dir):
     ckpt = tf.train.get_checkpoint_state(train_dir)
@@ -90,11 +120,11 @@ def read_dataset(dataset, tier, vocab):
                 question_tokens = tokenize(question)
                 question_uuid = qas[qid]['id']
 
-                context_ids = [str(vocab.get(w, qa_data.UNK_ID)) for w in context_tokens]
-                qustion_ids = [str(vocab.get(w, qa_data.UNK_ID)) for w in question_tokens]
+                context_ids = [vocab.get(w, qa_data.UNK_ID) for w in context_tokens]
+                qustion_ids = [vocab.get(w, qa_data.UNK_ID) for w in question_tokens]
 
-                context_data.append(' '.join(context_ids))
-                query_data.append(' '.join(qustion_ids))
+                context_data.append(context_ids)
+                query_data.append(qustion_ids)
                 question_uuid_data.append(question_uuid)
 
     return context_data, query_data, question_uuid_data
@@ -129,8 +159,18 @@ def generate_answers(sess, model, dataset, rev_vocab):
     :param rev_vocab: this is a list of vocabulary that maps index to actual words
     :return:
     """
+
+    context_data, question_data, question_uuid_data = dataset
     answers = {}
-    answrs[uuid] = answer
+
+    for i in range(len(context_data)):
+        paragraph = [context_data[i]]
+        question = [question_data[i]]
+        uuid = question_uuid_data[i]
+        predictions = qa.answer(sess, paragraph, question)
+        prediction_str_list = [rev_vocab[paragraph[j]] for j in range(predictions[0][0], predictions[0][1]+1)]
+        prediction_string = ' '.join(prediction_str_list)
+        answers[uuid] = prediction_string  
 
     return answers
 
@@ -177,14 +217,19 @@ def main(_):
     # ========= Model-specific =========
     # You must change the following code to adjust to your model
 
-    encoder = Encoder(size=FLAGS.state_size, vocab_dim=FLAGS.embedding_size)
-    decoder = Decoder(output_size=FLAGS.output_size)
-
-    qa = QASystem(encoder, decoder)
+    if FLAGS.model_name == "BiDAF":
+        encoder = BidafEncoder(FLAGS.state_size, FLAGS.embedding_size)
+        decoder = BidafDecoder(FLAGS.state_size)
+        qa = BidafQASystem(encoder, decoder, embeddings, backprop_word_embeddings)
+    else:
+        encoder = Encoder(FLAGS.state_size, FLAGS.embedding_size, FLAGS.dropout, encoder_layers, FLAGS.model_name)
+        decoder = Decoder(FLAGS.state_size, FLAGS.dropout, decoder_layers)
+        qa = QASystem(encoder, decoder, embeddings, backprop_word_embeddings)
 
     with tf.Session() as sess:
-        train_dir = get_normalized_train_dir(FLAGS.train_dir)
-        initialize_model(sess, qa, train_dir)
+        load_train_dir = get_normalized_train_dir(FLAGS.load_train_dir or FLAGS.train_dir)
+        load_train_dir += "/" + FLAGS.model_name + FLAGS.model_version # each model gets its own subdirectory
+        initialize_model(sess, qa, load_train_dir)
         answers = generate_answers(sess, qa, dataset, rev_vocab)
 
         # write to json file to root dir
