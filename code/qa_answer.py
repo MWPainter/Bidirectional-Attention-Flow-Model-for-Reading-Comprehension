@@ -120,11 +120,11 @@ def read_dataset(dataset, tier, vocab):
                 question_tokens = tokenize(question)
                 question_uuid = qas[qid]['id']
 
-                context_ids = [str(vocab.get(w, qa_data.UNK_ID)) for w in context_tokens]
-                qustion_ids = [str(vocab.get(w, qa_data.UNK_ID)) for w in question_tokens]
+                context_ids = [vocab.get(w, qa_data.UNK_ID) for w in context_tokens]
+                qustion_ids = [vocab.get(w, qa_data.UNK_ID) for w in question_tokens]
 
-                context_data.append(' '.join(context_ids))
-                query_data.append(' '.join(qustion_ids))
+                context_data.append(context_ids)
+                query_data.append(qustion_ids)
                 question_uuid_data.append(question_uuid)
 
     return context_data, query_data, question_uuid_data
@@ -164,12 +164,13 @@ def generate_answers(sess, model, dataset, rev_vocab):
     answers = {}
 
     for i in range(len(context_data)):
-        paragraph = context_data[i]
-        question = question_data[i]
+        paragraph = [context_data[i]]
+        question = [question_data[i]]
         uuid = question_uuid_data[i]
         predictions = qa.answer(sess, paragraph, question)
-    
-    answers[uuid] = answer
+        prediction_str_list = [rev_vocab[paragraph[j]] for j in range(predictions[0][0], predictions[0][1]+1)]
+        prediction_string = ' '.join(prediction_str_list)
+        answers[uuid] = prediction_string  
 
     return answers
 

@@ -522,8 +522,8 @@ class BidafQASystem(object):
     # this function is only called by evaluate_answer above and calls decode below.
     # returns indices of the most probable start and end words
         
-    def answer(self, session, paragraph, question):
-        beg, end = self.predict(session, paragraph, question)
+    def answer(self, session, paragraphs, questions):
+        beg, end = self.predict(session, paragraphs, questions)
 
         # take the argmax of (beg)_i(end)_j where j >= i (and beg_pr, end_pr are the beginning and end probabilities (actually logits, but it doesn't matter))
         shape = np.shape(beg)[1:] # shape of the predictions
@@ -535,10 +535,10 @@ class BidafQASystem(object):
     
     # this function is only called by answer above. returns probabilities for the start and end words
     
-    def predict(self, session, test_paragraph, test_question):
+    def predict(self, session, test_paragraphs, test_questions):
         #with tf.variable_scope("qa"):
         print(tf.get_variable_scope())
-        input_feed = self.create_feed_dict(test_question, test_paragraph)
+        input_feed = self.create_feed_dict(test_questions, test_paragraphs)
         output_feed = [self.predict_beg_probs, self.predict_end_probs]
         outputs = session.run(output_feed, feed_dict = input_feed)
         return outputs    
