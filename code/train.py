@@ -9,6 +9,7 @@ import tensorflow as tf
 import numpy as np
 
 from qa_model import Encoder, QASystem, Decoder
+from qa_bidaf_model import BidafEncoder, BidafQASystem, BidafDecoder
 from os.path import join as pjoin
 
 import logging
@@ -34,7 +35,7 @@ tf.app.flags.DEFINE_integer("print_every", 100, "How many iterations to do per p
 tf.app.flags.DEFINE_integer("keep", 0, "How many checkpoints to keep, 0 indicates keep all.")
 tf.app.flags.DEFINE_string("vocab_path", "data/squad/vocab.dat", "Path to vocab file (default: ./data/squad/vocab.dat)")
 tf.app.flags.DEFINE_string("embed_path", "", "Path to the trimmed GLoVe embedding (default: ./data/squad/glove.trimmed.{embedding_size}.npz)")
-tf.app.flags.DEFINE_boolean("debug", False, "Are we debugging?")
+tf.app.flags.DEFINE_boolean("debug", True, "Are we debugging?")
 tf.app.flags.DEFINE_integer("debug_training_size", 100, "A smaller training size for debugging, so that epochs are quick, and we can test logging etc")
 tf.app.flags.DEFINE_boolean("log_score", True, "If we want to log f1 and em score in a txt file, alongside the model params in the pa4/train/<model_name> directory")
 tf.app.flags.DEFINE_string("model_name", "BiDAF", "The model to use, pick from: 'baseline', 'embedding_backprop', 'deep_encoder_2layer', 'deep_encoder_3layer', 'deep_decoder_2layer', 'deep_decoder_3layer', 'QRNNs', 'BiDAF'")
@@ -114,7 +115,7 @@ def main(_):
         decoder_layers = 3 
     elif FLAGS.model_name == "BiDAF":
         # do nothing
-	pass
+	    pass
     elif not (FLAGS.model_name == "baseline"): 
         raise Exception("Invalid model name selected")
 
@@ -131,10 +132,14 @@ def main(_):
     # load in the embeddings
     embeddings = np.load(embed_path)['glove']
 
-    encoder = Encoder(FLAGS.state_size, FLAGS.embedding_size, FLAGS.dropout, encoder_layers, FLAGS.model_name)
-    decoder = Decoder(FLAGS.state_size, FLAGS.dropout, decoder_layers)
-
-    qa = QASystem(encoder, decoder, embeddings, backprop_word_embeddings)
+    if FLAGS.model_name == "BiDAF":
+        encoder = BidafEncoder(FLAGS.state_size, FLAGS.embedding_size, FLAGS.dropout)
+        decoder = BidafDecoder(FLAGS.state_size, FLAGS.dropout)
+        qa = BidafQASystem(encoder, decoder, embeddings, backprop_word_embeddings)
+    else:
+        encoder = Encoder(FLAGS.state_size, FLAGS.embedding_size, FLAGS.dropout, encoder_layers, FLAGS.model_name)
+        decoder = Decoder(FLAGS.state_size, FLAGS.dropout, decoder_layers)
+        qa = QASystem(encoder, decoder, embeddings, backprop_word_embeddings)
 
     if not os.path.exists(FLAGS.log_dir):
         os.makedirs(FLAGS.log_dir)
