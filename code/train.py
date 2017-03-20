@@ -134,8 +134,8 @@ def main(_):
     embeddings = np.load(embed_path)['glove']
 
     if FLAGS.model_name == "BiDAF":
-        encoder = BidafEncoder(FLAGS.state_size, FLAGS.embedding_size, FLAGS.dropout)
-        decoder = BidafDecoder(FLAGS.state_size, FLAGS.dropout)
+        encoder = BidafEncoder(FLAGS.state_size, FLAGS.embedding_size)
+        decoder = BidafDecoder(FLAGS.state_size)
         qa = BidafQASystem(encoder, decoder, embeddings, backprop_word_embeddings)
     else:
         encoder = Encoder(FLAGS.state_size, FLAGS.embedding_size, FLAGS.dropout, encoder_layers, FLAGS.model_name)

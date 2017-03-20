@@ -89,14 +89,13 @@ def build_deep_birnn(cell, inpt, mask, layers, scope="default_scope"):
 
 
 class BidafEncoder(object):
-    def __init__(self, state_size, embedding_dim, dropout_prob):
+    def __init__(self, state_size, embedding_dim):
         self.state_size = state_size
         self.embedding_dim = embedding_dim # the dimension of the word embeddings
-        self.dropout_prob = dropout_prob
         self.cell = tf.nn.rnn_cell.BasicLSTMCell(self.state_size)
         self.FLAGS = tf.app.flags.FLAGS # Get a link to tf.app.flags
 
-    def encode(self, question, question_mask, context_paragraph, context_mask):
+    def encode(self, question, question_mask, context_paragraph, context_mask, dropout_placeholder):
         """
         Encoder function. Encodes the question and context paragraphs into some hidden representation.
         This function assumes that the question has been padded already to be of length self.FLAGS.question_max_length 
@@ -121,7 +120,7 @@ class BidafEncoder(object):
 
         # Generate the similarity matrix
         # Part one of attention
-        similarity = self.compute_similarity(context_states, question_states)
+        similarity = self.compute_similarity(context_states, question_states, dropout_placeholder)
 
         # Compute the soft select vectors
         # Part two of attention
@@ -137,7 +136,7 @@ class BidafEncoder(object):
 
 
 
-    def compute_similarity(self, context_states, question_states): 
+    def compute_similarity(self, context_states, question_states, dropout_placeholder): 
         """
         :param context_states: H from paper, dims = [batch_size, T, 2d] 
         :param question_states: U from paper, dims = [batch_size, J, 2d]
@@ -157,7 +156,7 @@ class BidafEncoder(object):
             # Create the weights (dims=[1,1,6d]) to learn for the similarity function + tile to make it of dimension [T, J, 6d]
             weights_size = self.state_size * 6 # 6d
             weights = tf.get_variable("weights", shape=(1,1,weights_size), dtype=tf.float32, initializer=tf.contrib.layers.xavier_initializer()) # dims = [1,1,6d]
-            weights = tf.nn.dropout(weights, 1.0 - self.dropout_prob)
+            weights = tf.nn.dropout(weights, 1.0 - dropout_placeholder)
             weights = tf.tile(weights, [T, J, 1]) # dims = [T, J, 6d]
 
             # Compute the final similarity matrix using:
@@ -257,13 +256,12 @@ class BidafEncoder(object):
 
 
 class BidafDecoder(object):
-    def __init__(self, state_size, dropout_prob):
+    def __init__(self, state_size):
         self.state_size = state_size
         self.cell = tf.nn.rnn_cell.BasicLSTMCell(self.state_size)
-        self.dropout_prob = dropout_prob
         self.FLAGS = tf.app.flags.FLAGS # Get a link to tf.app.flags  
 
-    def decode(self, question_aware_context_states, mask):
+    def decode(self, question_aware_context_states, mask, dropout_placeholder):
         """
         From the paper, takes the output from the encoder (G) and computes a probability distribution over the beginning and end index
         :param question_aware_context_states: G from the paper. dims = [batch_size, T, 8d]
@@ -286,11 +284,11 @@ class BidafDecoder(object):
             T = tf.shape(question_aware_context_states)[1] 
             tend = 10 * self.state_size # got lazy, not calculating it from the inputs
             weights_beg = tf.get_variable("weights_beg", shape=(1,tend), dtype=tf.float32, initializer=tf.contrib.layers.xavier_initializer()) # dims = [1,10d]
-            weights_beg = tf.nn.dropout(weights_beg, 1.0 - self.dropout_prob)
+            weights_beg = tf.nn.dropout(weights_beg, 1.0 - dropout_placeholder)
             weights_beg = tf.tile(weights_beg, [T, 1]) # dim = [T,10d]
             weights_end = tf.get_variable("weights_end", shape=(1,tend), dtype=tf.float32, initializer=tf.contrib.layers.xavier_initializer()) # dims = [1,10d]
             weights_end = tf.tile(weights_beg, [T, 1]) # dim = [T,10d]
-            weights_end = tf.nn.dropout(weights_end, 1.0 - self.dropout_prob)
+            weights_end = tf.nn.dropout(weights_end, 1.0 - dropout_placeholder)
 
             # Compute logits (using broadcasting to multiply)
             to_sum_beg = tf.multiply(weights_beg, GM1) # dim = [batch_size, T, 10d]
@@ -334,6 +332,7 @@ class BidafQASystem(object):
         self.answer_end = tf.placeholder(tf.int32, shape = (None,), name="answer_end")
 
         # question, paragraph (context), answer, and dropout placeholders
+        self.dropout_placeholder = tf.placeholder(float32)
         self.question_word_ids_placeholder = tf.placeholder(tf.int32, (None, self.FLAGS.question_max_length), name="question_word_ids_placeholder")
         self.context_word_ids_placeholder = tf.placeholder(tf.int32, (None, self.FLAGS.context_paragraph_max_length), name="context_word_ids_placeholder")
         self.question_mask = tf.cast(tf.sign(self.question_word_ids_placeholder, name="question_mask"), tf.bool)
@@ -366,13 +365,13 @@ class BidafQASystem(object):
         :return:
         """
         question_aware_context_states = self.encoder.encode(self.question_var, self.question_mask, self.context_var, self.context_mask)
-        self.predict_beg, self.predict_end = self.decoder.decode(question_aware_context_states, self.context_mask)
+        self.predict_beg, self.predict_end = self.decoder.decode(question_aware_context_states, self.context_mask, self.dropout_placeholder)
         self.predict_beg_probs = tf.nn.softmax(self.predict_beg)
         self.predict_end_probs = tf.nn.softmax(self.predict_end)
         
 
         
-    def create_feed_dict(self, question_batch, context_batch, answer_start_batch = None, answer_end_batch = None):
+    def create_feed_dict(self, question_batch, context_batch, answer_start_batch = None, answer_end_batch = None, dropout = 0.0):
         feed_dict = {}
         list_data = type(context_batch) is list and (type(context_batch[0]) is list or type(context_batch[0]) is np.ndarray) 
         if not list_data:
@@ -404,6 +403,8 @@ class BidafQASystem(object):
 
         if answer_end_batch is not None:
             feed_dict[self.answer_end] = answer_end_batch
+
+        feed_dict[self.dropout_placeholder] = dropout
 
         return feed_dict                
             
@@ -561,18 +562,19 @@ class BidafQASystem(object):
         #tf.get_variable_scope().reuse_variables()
         print("o")
         print(tf.get_variable_scope())
+        epoch_loss = 0.0
         for question_batch, context_batch, answer_start_batch, answer_end_batch in dataset:
             answer_start_batch = unlistify(answer_start_batch) # batch returns dim=[batch_size,1] need dim=[batch_size,]
             answer_end_batch = unlistify(answer_end_batch) # batch returns dim=[batch_size,1] need dim=[batch_size,]
-            input_feed = self.create_feed_dict(question_batch, context_batch, answer_start_batch, answer_end_batch)
+            input_feed = self.create_feed_dict(question_batch, context_batch, answer_start_batch, answer_end_batch, self.FLAGS.dropout)
             output_feed = [self.updates, self.loss, self.global_grad_norm]
             outputs = session.run(output_feed, feed_dict = input_feed)
-            #loss += outputs[1]
+            epoch_loss += outputs[1]
             global_grad_norm = outputs[2]
             counter = (counter + 1) % self.FLAGS.print_every
             if counter == 0:
                 logging.info("Global grad norm for update: {}".format(global_grad_norm))
-
+        return epoch_loss
 
 
 
@@ -626,13 +628,14 @@ class BidafQASystem(object):
         for e in range(self.FLAGS.epochs):
             e_proper = e + self.FLAGS.epoch_base
             tic = time.time()
-            self.optimize(session, train_dataset_address)
+            train_loss = self.optimize(session, train_dataset_address, e)
             toc = time.time()
             epoch_time = toc - tic
             # save your model here
             self.saver.save(session, train_dir + "/model_params", global_step=e_proper)
             val_loss = self.validate(session, val_dataset_address)
-
+            logging.info("Training error in epoch {}: {}" % (e, train_loss))
+            logging.info("Validation error in epoch {}: {}" % (e, val_loss))
             print(train_dataset_address)
             print(val_dataset_address)
             f1_train, em_train = self.evaluate_answer(session, train_dataset_address, 100, True) # doing this cuz we wanna make sure it at least works well for the stuff it's already seen
