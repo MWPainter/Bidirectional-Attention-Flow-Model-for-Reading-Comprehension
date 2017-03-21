@@ -168,7 +168,7 @@ class BidafEncoder(object):
             # [batch_size, T, J, 1] -> [batch_size, T, J]
             unsummed_dots = tf.multiply(hu, weights)
             dot_product_matrix = tf.reduce_sum(unsummed_dots, axis=3)
-            similarity = tf.squeeze(dot_product_matrix, squeez_dims=3)
+            similarity = tf.squeeze(dot_product_matrix, squeeze_dims=3)
 
             return similarity
 
