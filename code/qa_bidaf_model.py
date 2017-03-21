@@ -163,12 +163,11 @@ class BidafEncoder(object):
             # 1. Broadcast a pointwise product of the weights over the hu tensor
             # [batch_size, T, J, 6d] * [T, J, 6d] -> [T, J, 6d] 
             # 2. Reduce sum over the 4th dimension (so step 1 + step 2 = a dot product at every [batch_size, T, J, :]
-            # [batch_size, T, J, 6d] -> [batch_size, T, J, 1]
+            # [batch_size, T, J, 6d] -> [batch_size, T, J]
             # 3. squeeze it into the correct shape
             # [batch_size, T, J, 1] -> [batch_size, T, J]
             unsummed_dots = tf.multiply(hu, weights)
-            dot_product_matrix = tf.reduce_sum(unsummed_dots, axis=3)
-            similarity = tf.squeeze(dot_product_matrix, squeeze_dims=[3])
+            similarity = tf.reduce_sum(unsummed_dots, axis=3)
 
             return similarity
 
