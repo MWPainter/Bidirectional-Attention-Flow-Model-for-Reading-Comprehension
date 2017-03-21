@@ -168,7 +168,7 @@ class BidafEncoder(object):
             # [batch_size, T, J, 1] -> [batch_size, T, J]
             unsummed_dots = tf.multiply(hu, weights)
             dot_product_matrix = tf.reduce_sum(unsummed_dots, axis=3)
-            similarity = tf.squeeze(dot_product_matrix)
+            similarity = tf.squeeze(dot_product_matrix, 3)
 
             return similarity
 
@@ -332,7 +332,7 @@ class BidafQASystem(object):
         self.answer_end = tf.placeholder(tf.int32, shape = (None,), name="answer_end")
 
         # question, paragraph (context), answer, and dropout placeholders
-        self.dropout_placeholder = tf.placeholder(float32)
+        self.dropout_placeholder = tf.placeholder(tf.float32)
         self.question_word_ids_placeholder = tf.placeholder(tf.int32, (None, self.FLAGS.question_max_length), name="question_word_ids_placeholder")
         self.context_word_ids_placeholder = tf.placeholder(tf.int32, (None, self.FLAGS.context_paragraph_max_length), name="context_word_ids_placeholder")
         self.question_mask = tf.cast(tf.sign(self.question_word_ids_placeholder, name="question_mask"), tf.bool)
@@ -342,8 +342,6 @@ class BidafQASystem(object):
         
         # ==== assemble pieces ====
         #with tf.variable_scope("qa", initializer=tf.uniform_unit_scaling_initializer(1.0)):
-        print("d")
-        print(tf.get_variable_scope())
         self.setup_embeddings()
         self.setup_system()
         self.setup_loss()
@@ -364,7 +362,7 @@ class BidafQASystem(object):
         to assemble your reading comprehension system!
         :return:
         """
-        question_aware_context_states = self.encoder.encode(self.question_var, self.question_mask, self.context_var, self.context_mask)
+        question_aware_context_states = self.encoder.encode(self.question_var, self.question_mask, self.context_var, self.context_mask, self.dropout_placeholder)
         self.predict_beg, self.predict_end = self.decoder.decode(question_aware_context_states, self.context_mask, self.dropout_placeholder)
         self.predict_beg_probs = tf.nn.softmax(self.predict_beg)
         self.predict_end_probs = tf.nn.softmax(self.predict_end)
@@ -498,7 +496,6 @@ class BidafQASystem(object):
             else: 
                 paragraphs = test_paragraphs[beg_pos:end_pos]
                 questions = test_questions[beg_pos:end_pos]
-            print(len(paragraphs))
             predictions += self.answer(session, paragraphs, questions)
 
         for i in range(num_samples): # num_samples = number of samples in dataset, it's not necessarily 100, as we cut out things we couldn't predict 
@@ -537,7 +534,6 @@ class BidafQASystem(object):
     
     def predict(self, session, test_paragraphs, test_questions):
         #with tf.variable_scope("qa"):
-        print(tf.get_variable_scope())
         input_feed = self.create_feed_dict(test_questions, test_paragraphs)
         output_feed = [self.predict_beg_probs, self.predict_end_probs]
         outputs = session.run(output_feed, feed_dict = input_feed)
@@ -560,8 +556,6 @@ class BidafQASystem(object):
 
         #with tf.variable_scope("qa"):
         #tf.get_variable_scope().reuse_variables()
-        print("o")
-        print(tf.get_variable_scope())
         epoch_loss = 0.0
         for question_batch, context_batch, answer_start_batch, answer_end_batch in dataset:
             answer_start_batch = unlistify(answer_start_batch) # batch returns dim=[batch_size,1] need dim=[batch_size,]
@@ -569,7 +563,7 @@ class BidafQASystem(object):
             input_feed = self.create_feed_dict(question_batch, context_batch, answer_start_batch, answer_end_batch, self.FLAGS.dropout)
             output_feed = [self.updates, self.loss, self.global_grad_norm]
             outputs = session.run(output_feed, feed_dict = input_feed)
-            epoch_loss += outputs[1]
+            epoch_loss += np.sum(outputs[1])
             global_grad_norm = outputs[2]
             counter = (counter + 1) % self.FLAGS.print_every
             if counter == 0:
@@ -628,16 +622,14 @@ class BidafQASystem(object):
         for e in range(self.FLAGS.epochs):
             e_proper = e + self.FLAGS.epoch_base
             tic = time.time()
-            train_loss = self.optimize(session, train_dataset_address, e)
+            train_loss = self.optimize(session, train_dataset_address)
             toc = time.time()
             epoch_time = toc - tic
             # save your model here
             self.saver.save(session, train_dir + "/model_params", global_step=e_proper)
             val_loss = self.validate(session, val_dataset_address)
-            logging.info("Training error in epoch {}: {}" % (e, train_loss))
-            logging.info("Validation error in epoch {}: {}" % (e, val_loss))
-            print(train_dataset_address)
-            print(val_dataset_address)
+            logging.info("Training error in epoch {}: {}".format(str(e), str(train_loss)))
+            logging.info("Validation error in epoch {}: {}".format(str(e), str(val_loss)))
             f1_train, em_train = self.evaluate_answer(session, train_dataset_address, 100, True) # doing this cuz we wanna make sure it at least works well for the stuff it's already seen
             f1_val, em_val = self.evaluate_answer(session, val_dataset_address, 100, True)
             

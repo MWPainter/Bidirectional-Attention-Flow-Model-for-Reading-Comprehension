@@ -19,8 +19,8 @@ logging.basicConfig(level=logging.INFO)
 tf.app.flags.DEFINE_float("learning_rate", 0.01, "Learning rate.")
 tf.app.flags.DEFINE_float("max_gradient_norm", 10.0, "Clip gradients to this norm.")
 tf.app.flags.DEFINE_float("dropout", 0.15, "Fraction of units randomly dropped on non-recurrent connections.")
-tf.app.flags.DEFINE_integer("batch_size", 24, "Batch size to use during training.")
-tf.app.flags.DEFINE_integer("epochs", 30, "Number of epochs to train.")
+tf.app.flags.DEFINE_integer("batch_size", 32, "Batch size to use during training.")
+tf.app.flags.DEFINE_integer("epochs", 10, "Number of epochs to train.")
 tf.app.flags.DEFINE_integer("state_size", 50, "Size of each model layer.")
 tf.app.flags.DEFINE_integer("output_size", 300, "The output size of your model.")
 tf.app.flags.DEFINE_integer("embedding_size", 100, "Size of the pretrained vocabulary.")
@@ -41,7 +41,7 @@ tf.app.flags.DEFINE_boolean("log_score", True, "If we want to log f1 and em scor
 tf.app.flags.DEFINE_string("model_name", "BiDAF", "The model to use, pick from: 'baseline', 'embedding_backprop', 'deep_encoder_2layer', 'deep_encoder_3layer', 'deep_decoder_2layer', 'deep_decoder_3layer', 'QRNNs', 'BiDAF'")
 tf.app.flags.DEFINE_string("model_version", "", "Make this '' for initial model, if we ever want to retrain a model, then we can use this (with '_i') to not overwrite the original data")
 tf.app.flags.DEFINE_boolean("clip_norms", True, "Do we wish to clip norms?")
-tf.app.flags.DEFINE_string("train_prefix", "train.short", "Prefix of all the training data files")
+tf.app.flags.DEFINE_string("train_prefix", "train", "Prefix of all the training data files")
 tf.app.flags.DEFINE_string("val_prefix", "val", "Prefix of all the validation data files")
 tf.app.flags.DEFINE_integer("epoch_base", 0, "The first epoch, so that we are saving the correct model and outputting the correct numbers if we restarted")
 
@@ -123,8 +123,7 @@ def main(_):
     #train_dataset = load_dataset(FLAGS.data_dir, "train")
     #val_dataset = load_dataset(FLAGS.data_dir, "val")
     train_dataset_address = FLAGS.data_dir + "/" + FLAGS.train_prefix 
-    val_dataset_address = FLAGS.data_dir + "/" + FLAGS.train_prefix 
-    #val_dataset_address = FLAGS.data_dir + "/" + FLAGS.val_prefix 
+    val_dataset_address = FLAGS.data_dir + "/" + FLAGS.val_prefix 
     
     embed_path = FLAGS.embed_path or pjoin("data", "squad", "glove.trimmed.{}.npz".format(FLAGS.embedding_size))
     vocab_path = FLAGS.vocab_path or pjoin(FLAGS.data_dir, "vocab.dat")

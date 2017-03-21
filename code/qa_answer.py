@@ -140,7 +140,7 @@ def prepare_dev(prefix, dev_filename, vocab):
     return context_data, question_data, question_uuid_data
 
 
-def generate_answers(sess, model, dataset, rev_vocab):
+def generate_answers(sess, qa, dataset, rev_vocab):
     """
     Loop over the dev or test dataset and generate answer.
 
@@ -168,7 +168,13 @@ def generate_answers(sess, model, dataset, rev_vocab):
         question = [question_data[i]]
         uuid = question_uuid_data[i]
         predictions = qa.answer(sess, paragraph, question)
-        prediction_str_list = [rev_vocab[paragraph[j]] for j in range(predictions[0][0], predictions[0][1]+1)]
+	prediction_str_list = []
+	for j in range(predictions[0][0], predictions[0][1]+1):
+	    #print("j ", j)
+	    #print("p ", paragraph[0][j])
+	    #print(rev_vocab[paragraph[0][j]])
+	    prediction_str_list.append(rev_vocab[paragraph[0][j]])
+        #prediction_str_list = [rev_vocab[paragraph[j]] for j in range(predictions[0][0], predictions[0][1]+1)]
         prediction_string = ' '.join(prediction_str_list)
         answers[uuid] = prediction_string  
 
@@ -193,9 +199,39 @@ def get_normalized_train_dir(train_dir):
 
 def main(_):
 
-    vocab, rev_vocab = initialize_vocab(FLAGS.vocab_path)
+    # Work out flags that decide the architecture we're doing to use (defaults for the baseline)
+    backprop_word_embeddings = False
+    encoder_layers = 1
+    decoder_layers = 1
 
+    if FLAGS.model_name == "embedding_backprop":
+        backprop_word_embeddings = True
+    elif FLAGS.model_name == "deep_encoder_2layer":
+        backprop_word_embeddings = True # false if that did better
+        encoder_layers = 2
+    elif FLAGS.model_name == "deep_encoder_3layer":
+        backprop_word_embeddings = True # false if that did better
+        encoder_layers = 3
+    elif FLAGS.model_name == "deep_decoder_2layer":
+        backprop_word_embeddings = True # false if that did better
+        encoder_layers = 2 # 1, 2 if one of them did better 
+        decoder_layer = 2
+    elif FLAGS.model_name == "deep_decoder_3layer":
+        backprop_word_embeddings = True # false if that did better
+        encoder_layers = 3 # 1, 2 if one of them did better
+        decoder_layers = 3 
+    elif FLAGS.model_name == "BiDAF":
+        # do nothing
+        pass
+    elif not (FLAGS.model_name == "baseline"): 
+        raise Exception("Invalid model name selected") 
+    
     embed_path = FLAGS.embed_path or pjoin("data", "squad", "glove.trimmed.{}.npz".format(FLAGS.embedding_size))
+    vocab_path = FLAGS.vocab_path or pjoin(FLAGS.data_dir, "vocab.dat")
+    vocab, rev_vocab = initialize_vocab(vocab_path) # vocab = {words : indices}, rev_vocab = [words] (where each word is at index as dictated by vocab)
+    
+    # load in the embeddings
+    embeddings = np.load(embed_path)['glove']
 
     if not os.path.exists(FLAGS.log_dir):
         os.makedirs(FLAGS.log_dir)
