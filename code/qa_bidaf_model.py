@@ -22,6 +22,8 @@ def get_optimizer(opt):
         optfn = tf.train.AdamOptimizer
     elif opt == "sgd":
         optfn = tf.train.GradientDescentOptimizer
+    elif opt == "adadelta":
+        optfn = tf.train.AdadeltaOptimizer
     else:
         assert (False)
     return optfn
