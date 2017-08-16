@@ -20,3 +20,9 @@ Note that you will always want to run your code from this assignment directory, 
 $ python code/train.py
 
 This ensures that any files created in the process don't pollute the code directoy.
+
+
+# Final Results:
+**N.B. These results were obtained just after the report deadline :( therefore are inconsistent with the report**
+F1 score: 61%
+EM score: 42%
